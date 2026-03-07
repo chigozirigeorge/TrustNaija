@@ -3,13 +3,21 @@ import { cn } from '@/lib/utils'
 import type { RiskLevel } from '@/types'
 
 interface RiskBadgeProps {
-  level: RiskLevel
+  level?: RiskLevel
   score?: number
   size?: 'sm' | 'md' | 'lg'
   className?: string
 }
 
 export function RiskBadge({ level, score, size = 'md', className }: RiskBadgeProps) {
+  // Determine level from score if not provided
+  const riskLevel = level || (score !== undefined ? (
+    score >= 75 ? 'CRITICAL' :
+    score >= 50 ? 'HIGH' :
+    score >= 25 ? 'MEDIUM' :
+    'LOW'
+  ) : 'LOW')
+
   const styles: Record<RiskLevel, string> = {
     LOW: 'bg-signal-500/15 text-signal-400 border-signal-500/25',
     MEDIUM: 'bg-amber-500/15 text-amber-400 border-amber-500/25',
@@ -27,17 +35,17 @@ export function RiskBadge({ level, score, size = 'md', className }: RiskBadgePro
     <span
       className={cn(
         'inline-flex items-center gap-1.5 font-display font-semibold tracking-wider uppercase rounded-full border',
-        styles[level],
+        styles[riskLevel],
         sizes[size],
         className
       )}
     >
       <span className={cn(
         'w-1.5 h-1.5 rounded-full',
-        level === 'LOW' ? 'bg-signal-400' :
-        level === 'MEDIUM' ? 'bg-amber-400' : 'bg-danger-400'
+        riskLevel === 'LOW' ? 'bg-signal-400' :
+        riskLevel === 'MEDIUM' ? 'bg-amber-400' : 'bg-danger-400'
       )} />
-      {level}
+      {score !== undefined ? `${riskLevel} (${score})` : riskLevel}
       {score !== undefined && ` · ${score}`}
     </span>
   )

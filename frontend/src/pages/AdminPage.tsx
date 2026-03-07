@@ -30,9 +30,9 @@ const MOCK_CHART_DATA = [
 ]
 
 const MOCK_REPORTS: AdminReport[] = [
-  { id: '1', identifier_id: 'abc', scam_type: 'investment', description: 'Promised 50% returns monthly', amount_lost_ngn: 500000, channel: 'web', status: 'pending', created_at: new Date().toISOString() },
-  { id: '2', identifier_id: 'def', scam_type: 'romance', channel: 'mobile', status: 'pending', created_at: new Date(Date.now() - 3600000).toISOString() },
-  { id: '3', identifier_id: 'ghi', scam_type: 'phishing', description: 'Fake GTBank login page', channel: 'ussd', status: 'pending', created_at: new Date(Date.now() - 7200000).toISOString() },
+  { id: '1', identifier_id: 'abc', scam_type: 'investment', description: 'Promised 50% returns monthly', amount_lost_ngn: 500000, channel: 'web', status: 'pending', created_at: new Date().toISOString(), risk_score: 68 },
+  { id: '2', identifier_id: 'def', scam_type: 'romance', channel: 'mobile', status: 'pending', created_at: new Date(Date.now() - 3600000).toISOString(), risk_score: 42 },
+  { id: '3', identifier_id: 'ghi', scam_type: 'phishing', description: 'Fake GTBank login page', channel: 'ussd', status: 'pending', created_at: new Date(Date.now() - 7200000).toISOString(), risk_score: 85 },
 ]
 
 const MOCK_LOGS: AuditLog[] = [

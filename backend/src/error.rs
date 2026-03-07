@@ -1,3 +1,5 @@
+use std::env::VarError;
+
 /// Unified application error  types with HTTPS mapping
 
 use axum::{
@@ -86,6 +88,18 @@ impl IntoResponse for AppError {
         }));
 
         (status, body).into_response()
+    }
+}
+
+impl From<VarError> for AppError {
+    fn from(e: VarError) -> Self {
+        AppError::Internal(format!("Internal Server error {}", e))
+    }
+}
+
+impl From<reqwest::Error> for AppError {
+    fn from(e: reqwest::Error) -> Self {
+        AppError::Internal(format!("HTTP request failed: {}", e))
     }
 }
 
