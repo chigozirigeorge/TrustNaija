@@ -1,0 +1,105 @@
+import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Shield, Phone, KeyRound, ArrowRight } from 'lucide-react'
+import { useForm } from 'react-hook-form'
+import { Input } from '@/components/ui/Input'
+import { Button } from '@/components/ui/Button'
+import { requestOtp, verifyOtp } from '@/lib/api'
+import { useAuth } from '@/context/AuthContext'
+
+export function LoginPage() {
+  const [step, setStep] = useState<'phone' | 'otp'>('phone')
+  const [phone, setPhone] = useState('')
+  const [error, setError] = useState('')
+  const { login } = useAuth()
+  const navigate = useNavigate()
+
+  const { register: regPhone, handleSubmit: handlePhone, formState: { isSubmitting: submittingPhone } } = useForm<{ phone: string }>()
+  const { register: regOtp, handleSubmit: handleOtp, formState: { isSubmitting: submittingOtp } } = useForm<{ otp: string }>()
+
+  const onPhoneSubmit = async (data: { phone: string }) => {
+    setError('')
+    try {
+      await requestOtp(data.phone)
+      setPhone(data.phone)
+      setStep('otp')
+    } catch {
+      setError('Could not send OTP. Please check the number and try again.')
+    }
+  }
+
+  const onOtpSubmit = async (data: { otp: string }) => {
+    setError('')
+    try {
+      const auth = await verifyOtp(phone, data.otp)
+      login(auth)
+      navigate('/')
+    } catch {
+      setError('Invalid or expired OTP. Please try again.')
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-navy-950 flex items-center justify-center px-4">
+      <div className="w-full max-w-sm">
+        {/* Logo */}
+        <div className="flex items-center gap-2 justify-center mb-10">
+          <div className="w-9 h-9 rounded-xl bg-signal-500/15 border border-signal-500/30 flex items-center justify-center">
+            <Shield className="w-5 h-5 text-signal-400" />
+          </div>
+          <span className="font-display font-bold text-white text-xl">Trust<span className="text-signal-400">Naija</span></span>
+        </div>
+
+        <div className="bg-navy-900/70 border border-white/[0.07] rounded-2xl p-8">
+          <h1 className="text-xl font-display font-bold text-white mb-1">
+            {step === 'phone' ? 'Sign In' : 'Verify OTP'}
+          </h1>
+          <p className="text-sm text-slate-400 font-body mb-6">
+            {step === 'phone'
+              ? 'Enter your Nigerian phone number to receive an OTP.'
+              : `We sent a 6-digit code to ${phone}`}
+          </p>
+
+          {step === 'phone' ? (
+            <form onSubmit={handlePhone(onPhoneSubmit)} className="space-y-4">
+              <Input
+                label="Phone Number"
+                placeholder="08012345678"
+                type="tel"
+                leftIcon={<Phone className="w-4 h-4" />}
+                {...regPhone('phone', { required: 'Phone number required' })}
+              />
+              {error && <p className="text-xs text-danger-400">{error}</p>}
+              <Button type="submit" variant="primary" size="lg" className="w-full" loading={submittingPhone}>
+                Send OTP
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={handleOtp(onOtpSubmit)} className="space-y-4">
+              <Input
+                label="6-Digit OTP"
+                placeholder="123456"
+                maxLength={6}
+                leftIcon={<KeyRound className="w-4 h-4" />}
+                {...regOtp('otp', { required: 'OTP required', minLength: 6, maxLength: 6 })}
+              />
+              {error && <p className="text-xs text-danger-400">{error}</p>}
+              <Button type="submit" variant="primary" size="lg" className="w-full" loading={submittingOtp}>
+                Verify & Sign In
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+              <Button type="button" variant="ghost" size="sm" className="w-full" onClick={() => setStep('phone')}>
+                Use different number
+              </Button>
+            </form>
+          )}
+        </div>
+
+        <p className="text-xs text-slate-600 text-center mt-6 font-body">
+          By signing in you agree to our Terms of Service and Privacy Policy
+        </p>
+      </div>
+    </div>
+  )
+}

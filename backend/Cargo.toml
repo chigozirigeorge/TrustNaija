@@ -1,0 +1,69 @@
+[package]
+name = "TrustNiger"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "TrustNiger"
+path = "src/main.rs"
+
+[dependencies]
+# Web framework
+axum = { version = "0.7", features = ["macros"] }
+axum-extra = { version = "0.9", features = ["typed-header"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["trace", "cors", "limit"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "migrate"] }
+
+# Auth
+jsonwebtoken = "9"
+bcrypt = "0.15"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Validation
+validator = { version = "0.18", features = ["derive"] }
+
+# IDs
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Config / env
+dotenvy = "0.15"
+
+# Logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Rate limiting (in-memory, suitable for single-node pilot)
+governor = "0.6"
+
+# Geospatial distance (haversine)
+geoutils = "0.5"
+redis = {version = "1.0.4", features = ["tokio-comp", "connection-manager"]}
+regex = "1.12.3"
+url = "2.5.8"
+once_cell = "1.21.3"
+sha2 = "0.10.9"
+hex = "0.4.3"
+reqwest = { version = "0.13", features = ["json", "rustls"] }
+rand = "0.10.0"
+
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
