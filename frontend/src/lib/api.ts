@@ -1,7 +1,7 @@
 import axios from 'axios'
 import type { LookupResult, AuthResponse, UserProfile } from '@/types'
 
-const apiUrl = (import.meta.env.VITE_API_URL as string | undefined) || 'https://trustnaija-production.up.railway.app/'
+const apiUrl = (import.meta.env.VITE_API_URL as string | undefined) || 'https://trustnaija-production.up.railway.app/api'
 
 const api = axios.create({
   baseURL: apiUrl,
