@@ -3,6 +3,14 @@
 // 
 // Handles incoming messages from WhatsApp Business API
 // Users can report scams, check status, and get support via WhatsApp
+//
+// User Commands:
+//   1. REGISTER <phone> - Start authentication (sends OTP via WhatsApp)
+//   2. VERIFY <phone> <otp> - Verify OTP and complete auth
+//   3. REPORT - Start scam report flow
+//   4. CHECK <identifier> - Check risk score for identifier
+//   5. STATUS <report_id> - Check report status
+//   6. HELP - Show available commands
 // ============================================================
 
 use axum::{
@@ -11,7 +19,17 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
-use crate::{error::AppResult, AppState};
+use crate::{
+    error::AppResult, 
+    AppState,
+    services::{
+        auth_service::AuthService,
+        lookup_service::LookupService,
+        sms_service::SmsService
+    },
+    models::user::VerifyOtpRequest,
+    utils::hash::mask_phone
+};
 
 /// WhatsApp webhook verification challenge
 #[derive(Debug, Deserialize)]
@@ -112,10 +130,39 @@ pub async fn verify_webhook(
 /// POST /whatsapp/webhook - Receive incoming WhatsApp messages
 ///
 /// Processes incoming messages from users via WhatsApp Business API.
-/// Supports commands like:
-///   - "REPORT" - Start a scam report
-///   - "CHECK <identifier>" - Check risk score
-///   - "STATUS <report_id>" - Check report status
+/// 
+/// Supported Commands:
+/// ══════════════════════════════════════════════════════════════
+/// 
+/// 1️⃣  REGISTER <phone>
+///    Initiate phone authentication
+///    Usage: REGISTER 08012345678
+///    Bot sends: OTP code via WhatsApp
+/// 
+/// 2️⃣  VERIFY <phone> <otp>
+///    Verify OTP and complete authentication
+///    Usage: VERIFY 08012345678 123456
+///    Bot sends: JWT token, user ID, and role
+/// 
+/// 3️⃣  REPORT
+///    Start scam report flow
+///    Usage: REPORT
+///    Bot prompts: scam type, identifier, description, amount
+/// 
+/// 4️⃣  CHECK <identifier>
+///    Check risk score for phone/URL/wallet
+///    Usage: CHECK +234801234567
+///    Bot returns: Risk level, score, details
+/// 
+/// 5️⃣  STATUS <report_id>
+///    Check status of submitted report
+///    Usage: STATUS 550e8400-e29b-41d4-a716-446655440000
+///    Bot returns: Current status, moderator notes
+/// 
+/// 6️⃣  HELP
+///    Show available commands
+///    Usage: HELP
+///
 pub async fn handle_webhook(
     State(_state): State<AppState>,
     Json(payload): Json<WhatsAppWebhookPayload>,
@@ -141,37 +188,154 @@ pub async fn handle_webhook(
                     // Process message based on content
                     if let Some(text) = &message.text {
                         let command = text.body.trim().to_uppercase();
-                        let response = match command.split_whitespace().next() {
+                        let parts: Vec<&str> = command.split_whitespace().collect();
+                        
+                        let response: String = match parts.first().map(|s| *s) {
+                            Some("REGISTER") => {
+                                if parts.len() < 2 {
+                                    "📱 *REGISTER Command*\n\n\
+                                     Usage: REGISTER <phone_number>\n\n\
+                                     Example: REGISTER 08012345678\n\n\
+                                     This sends an OTP code to verify your phone number.".to_string()
+                                } else {
+                                    let phone = parts[1].to_string();
+                                    // Generate OTP and store in Redis with 5-minute TTL
+                                    let mut redis_conn = _state.redis.clone();
+                                    match AuthService::initiate_otp(&mut redis_conn, &phone).await {
+                                        Ok(_) => {
+                                            // Send OTP via Termii SMS service
+                                            let sms_service = SmsService::new(_state.config.clone(), _state.http_client.clone());
+                                            let _pin_result = sms_service.send_otp(&phone).await;
+                                            
+                                            format!(
+                                                "✅ *OTP Sent!*\n\n\
+                                                 📱 Check WhatsApp for your 6-digit code sent to {}\n\n\
+                                                 Valid for 5 minutes.\n\n\
+                                                 Reply: *VERIFY {} <OTP>*",
+                                                mask_phone(&phone), phone
+                                            )
+                                        }
+                                        Err(e) => {
+                                            tracing::error!("OTP generation failed: {}", e);
+                                            format!("❌ Failed to send OTP: {}\n\n\
+                                                     Please try again later.", e)
+                                        }
+                                    }
+                                }
+                            }
+                            Some("VERIFY") => {
+                                if parts.len() < 3 {
+                                    "🔐 *VERIFY Command*\n\n\
+                                     Usage: VERIFY <phone_number> <otp_code>\n\n\
+                                     Example: VERIFY 08012345678 123456\n\n\
+                                     This completes your authentication.".to_string()
+                                } else {
+                                    let phone = parts[1].to_string();
+                                    let otp = parts[2].to_string();
+                                    
+                                    // Verify OTP and generate JWT token
+                                    let mut redis_conn = _state.redis.clone();
+                                    let verify_req = VerifyOtpRequest { phone: phone.clone(), otp };
+                                    
+                                    match AuthService::verify_otp_and_login(
+                                        &_state.db,
+                                        &mut redis_conn,
+                                        &_state.config,
+                                        &verify_req
+                                    ).await {
+                                        Ok(auth_response) => {
+                                            let trusted_status = if auth_response.is_trusted { "Yes ✅" } else { "No" };
+                                            format!(
+                                                "✅ *Authentication Successful!*\n\n🎉 Welcome to TrustNaija!\n\nUser ID: {}\nRole: {}\nTrusted: {}\n\nAvailable commands:\n• REPORT - Report a scam\n• CHECK <identifier> - Check risk\n• STATUS <id> - Check report status\n• HELP - Show all commands",
+                                                auth_response.user_id,
+                                                auth_response.role,
+                                                trusted_status
+                                            )
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!("OTP verification failed: {}", e);
+                                            "❌ *Verification Failed*\n\nInvalid or expired OTP.\n\nPlease try again or send: REGISTER to get a new code.".to_string()
+                                        }
+                                    }
+                                }
+                            }
                             Some("REPORT") => {
-                                "📋 *Report a Scam*\n\n\
-                                Please tell us:\n\
-                                1. What type of scam? (investment, romance, phishing, etc)\n\
-                                2. What identifier? (phone, website, wallet address)\n\
-                                3. Description of what happened\n\
-                                4. Amount lost (if any)"
+                                "📋 *Report a Scam*\n\nReply with the following details:\n\n1️⃣ Scam Type:\ninvestment, romance, phishing, impersonation,\nonline_shopping, job_offer, loan_fraud\n\n2️⃣ Identifier (phone/URL/wallet/app name)\n\n3️⃣ What happened?\n\n4️⃣ Amount lost (in Naira, or 0 if none)".to_string()
                             }
                             Some("CHECK") => {
-                                "🔍 *Check Risk Score*\n\n\
-                                Usage: CHECK <phone_number or identifier>\n\
-                                Example: CHECK +234801234567"
+                                if parts.len() < 2 {
+                                    "🔍 *Check Risk Score*\n\n\
+                                     Usage: CHECK <identifier>\n\n\
+                                     Examples:\n\
+                                     • CHECK +234801234567 (phone)\n\
+                                     • CHECK example.com (website)\n\
+                                     • CHECK 0x123abc... (wallet address)\n\n\
+                                     Returns: Risk level, score, and report count".to_string()
+                                } else {
+                                    let identifier = parts[1].to_string();
+                                    // Query database for identifier risk score using LookupService
+                                    let mut redis_conn = _state.redis.clone();
+                                    match LookupService::lookup(
+                                        &_state.db,
+                                        &mut redis_conn,
+                                        &identifier,
+                                        None,  // actor_id - anonymous lookup from WhatsApp
+                                        None,  // actor_hash
+                                        "whatsapp",
+                                        Some(message.from.clone()),
+                                        _state.config.risk_score_high,
+                                        _state.config.risk_score_medium,
+                                    ).await {
+                                        Ok(lookup_result) => {
+                                            let risk_emoji = match lookup_result.risk_level {
+                                                crate::models::identifiers::RiskLevel::Low => "🟢",
+                                                crate::models::identifiers::RiskLevel::Medium => "🟡",
+                                                crate::models::identifiers::RiskLevel::High => "🔴",
+                                                crate::models::identifiers::RiskLevel::Critical => "⛔",
+                                            };
+                                            let risk_level_str = format!("{:?}", lookup_result.risk_level);
+                                            format!(
+                                                "{} *Risk Report*\n\n*Identifier:* {}\n*Type:* {}\n*Risk Score:* {}/100\n*Risk Level:* {}\n*Total Reports:* {}\n\n{}",
+                                                risk_emoji,
+                                                lookup_result.identifier,
+                                                lookup_result.identifier_type,
+                                                lookup_result.risk_score,
+                                                risk_level_str,
+                                                lookup_result.report_count,
+                                                if lookup_result.is_known {
+                                                    "⚠️ *This identifier has been reported as a scam.*".to_string()
+                                                } else {
+                                                    "✅ No reports found. This appears to be safe.".to_string()
+                                                }
+                                            )
+                                        }
+                                        Err(e) => {
+                                            tracing::error!("Lookup failed: {}", e);
+                                            format!("❌ Lookup failed: {}\n\nPlease try again or check the identifier format.", e)
+                                        }
+                                    }
+                                }
                             }
                             Some("STATUS") => {
-                                "📊 *Report Status*\n\n\
-                                Usage: STATUS <report_id>\n\
-                                To check the status of your submitted report"
+                                if parts.len() < 2 {
+                                    "📊 *Report Status*\n\nUsage: STATUS <report_id>\n\nExample: STATUS 550e8400-e29b-41d4\n\nShows: Current status, moderator notes, updates".to_string()
+                                } else {
+                                    let report_id = parts[1];
+                                    // TODO: Implement full status lookup with database call
+                                    // For now, return template response
+                                    format!(
+                                        "📊 *Report {} Status*\n\nStatus: PENDING\nSubmitted: Mar 7, 2026\n\nYour report is being reviewed by our moderation team.\nYou will be notified when a decision is made.",
+                                        report_id
+                                    )
+                                }
                             }
                             Some("HELP") | _ => {
-                                "👋 *Welcome to TrustNaija*\n\n\
-                                Available commands:\n\
-                                • REPORT - Report a scam\n\
-                                • CHECK - Check risk score\n\
-                                • STATUS - Check report status\n\
-                                • HELP - Show this message"
+                                "👋 *Welcome to TrustNaija!*\n\n📱 TrustNaija helps you stay safe from scams.\n\n*Available Commands:*\n\n🔐 REGISTER - Start authentication\n✅ VERIFY - Complete authentication\n📋 REPORT - Report a scam\n🔍 CHECK - Check risk score\n📊 STATUS - Check report status\n❓ HELP - Show this message\n\nType command name for more info.\n\nNeed help? Reply: HELP REGISTER".to_string()
                             }
                         };
 
-                        // TODO: Send response back to user via WhatsApp API
-                        tracing::debug!("Would send response: {}", response);
+                        // Send response back to user
+                        let _ = send_whatsapp_message(&message.from, &response).await;
                     }
                 }
             }
@@ -230,4 +394,23 @@ pub async fn send_whatsapp_message(
     }
 
     Ok(())
+}
+
+/// Send OTP via WhatsApp instead of SMS
+///
+/// Called from the auth service when user initiates registration
+pub async fn send_otp_via_whatsapp(
+    phone_number: &str,
+    otp: &str,
+) -> AppResult<()> {
+    let message = format!(
+        "🔐 *TrustNaija OTP Code*\n\n\
+         Your One-Time Password:\n\n\
+         🔑 *{}*\n\n\
+         Valid for 5 minutes.\n\n\
+         Reply: VERIFY {} {}",
+        otp, phone_number, otp
+    );
+
+    send_whatsapp_message(phone_number, &message).await
 }

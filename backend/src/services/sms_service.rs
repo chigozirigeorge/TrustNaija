@@ -105,8 +105,10 @@ impl SmsService {
         Ok(message_id)
     }
 
-    /// Send an OTP via Termii's dedicated OTP token API.
+    /// Send an OTP via Termii's dedicated OTP token API and WhatsApp.
     /// Returns the pin_id needed for verification.
+    /// 
+    /// The OTP is sent via both SMS (Termii) and WhatsApp for better delivery.
     pub async fn send_otp(&self, phone: &str) -> AppResult<String> {
         let to = normalize_phone(phone)
             .ok_or_else(|| AppError::BadRequest("Invalid phone number".into()))?;
@@ -114,7 +116,7 @@ impl SmsService {
         let req = TermiiOtpRequest {
             api_key: self.config.termii_api_key.clone(),
             message_type: "NUMERIC".into(),
-            to,
+            to: to.clone(),
             from: self.config.termii_sender_id.clone(),
             channel: self.config.termii_channel.clone(),
             pin_attempts: 3,
@@ -142,9 +144,52 @@ impl SmsService {
             .await
             .map_err(|e| AppError::SmsService(format!("Failed to parse Termii OTP response: {}", e)))?;
 
-        otp_resp
+        let pin_id = otp_resp
             .pin_id
-            .ok_or_else(|| AppError::SmsService("Termii did not return pin_id".into()))
+            .ok_or_else(|| AppError::SmsService("Termii did not return pin_id".into()))?;
+
+        // Also send OTP via WhatsApp for better delivery and user experience
+        let otp_message = format!(
+            "🔐 *TrustNaija OTP Code*\n\n\
+             Your One-Time Password:\n\n\
+             🔑 *{}*\n\n\
+             Valid for 5 minutes.\n\n\
+             Do not share this code with anyone.\n\n\
+             Reply: VERIFY {} <OTP>",
+            pin_id, to
+        );
+
+        // Send via WhatsApp (fire and forget - don't fail if WhatsApp send fails)
+        let access_token = std::env::var("ACCESS_TOKEN").ok();
+        let phone_number_id = std::env::var("PHONE_NUMBER_ID").ok();
+        
+        if let (Some(token), Some(phone_id)) = (access_token, phone_number_id) {
+            let whatsapp_payload = serde_json::json!({
+                "messaging_product": "whatsapp",
+                "to": to,
+                "type": "text",
+                "text": {
+                    "body": otp_message
+                }
+            });
+
+            let _ = self
+                .http
+                .post(format!(
+                    "https://graph.instagram.com/v18.0/{}/messages",
+                    phone_id
+                ))
+                .header("Authorization", format!("Bearer {}", token))
+                .json(&whatsapp_payload)
+                .send()
+                .await
+                .map_err(|e| {
+                    tracing::warn!("Failed to send OTP via WhatsApp: {}", e);
+                    e
+                });
+        }
+
+        Ok(pin_id)
     }
 
     /// Verify a Termii OTP token.
