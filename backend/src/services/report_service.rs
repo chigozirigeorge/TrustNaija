@@ -261,26 +261,34 @@ impl ReportService {
         limit: i64,
         offset: i64,
     ) -> AppResult<Vec<AdminReportResponse>> {
-        let reports = sqlx::query_as::<_, (Report, i16)>(
+        let rows = sqlx::query!(
             r#"
-            SELECT r.id, r.identifier_id, r.reporter_id, r.reporter_hash, r.scam_type,
-                   r.description, r.amount_lost_ngn, r.channel, r.status,
-                   r.moderated_by, r.moderated_at, r.moderation_note,
-                   r.created_at, r.updated_at, i.risk_score
+            SELECT r.id, r.identifier_id, r.scam_type, r.description, r.amount_lost_ngn,
+                   r.channel, r.status, r.created_at, i.risk_score
             FROM reports r
             JOIN identifiers i ON r.identifier_id = i.id
             WHERE r.status = 'pending'
             ORDER BY r.created_at ASC
             LIMIT $1 OFFSET $2
-            "#
+            "#,
+            limit,
+            offset
         )
-        .bind(limit)
-        .bind(offset)
         .fetch_all(db)
         .await?;
 
-        Ok(reports.into_iter().map(|(r, risk_score)| {
-            AdminReportResponse::from_report(r, risk_score)
+        Ok(rows.into_iter().map(|row| {
+            AdminReportResponse {
+                id: row.id,
+                identifier_id: row.identifier_id,
+                scam_type: row.scam_type,
+                description: row.description,
+                amount_lost_ngn: row.amount_lost_ngn,
+                channel: row.channel,
+                status: row.status,
+                created_at: row.created_at,
+                risk_score: row.risk_score,
+            }
         }).collect())
     }
 
@@ -292,45 +300,67 @@ impl ReportService {
         status: Option<&str>,
     ) -> AppResult<Vec<AdminReportResponse>> {
         let reports = if let Some(s) = status {
-            sqlx::query_as::<_, (Report, i16)>(
+            let rows = sqlx::query!(
                 r#"
-                SELECT r.id, r.identifier_id, r.reporter_id, r.reporter_hash, r.scam_type,
-                       r.description, r.amount_lost_ngn, r.channel, r.status,
-                       r.moderated_by, r.moderated_at, r.moderation_note,
-                       r.created_at, r.updated_at, i.risk_score
+                SELECT r.id, r.identifier_id, r.scam_type, r.description, r.amount_lost_ngn,
+                       r.channel, r.status, r.created_at, i.risk_score
                 FROM reports r
                 JOIN identifiers i ON r.identifier_id = i.id
                 WHERE r.status = $1
                 ORDER BY r.created_at DESC
                 LIMIT $2 OFFSET $3
-                "#
+                "#,
+                s,
+                limit,
+                offset
             )
-            .bind(s)
-            .bind(limit)
-            .bind(offset)
             .fetch_all(db)
-            .await?
+            .await?;
+            
+            rows.into_iter().map(|row| {
+                AdminReportResponse {
+                    id: row.id,
+                    identifier_id: row.identifier_id,
+                    scam_type: row.scam_type,
+                    description: row.description,
+                    amount_lost_ngn: row.amount_lost_ngn,
+                    channel: row.channel,
+                    status: row.status,
+                    created_at: row.created_at,
+                    risk_score: row.risk_score,
+                }
+            }).collect::<Vec<_>>()
         } else {
-            sqlx::query_as::<_, (Report, i16)>(
+            let rows = sqlx::query!(
                 r#"
-                SELECT r.id, r.identifier_id, r.reporter_id, r.reporter_hash, r.scam_type,
-                       r.description, r.amount_lost_ngn, r.channel, r.status,
-                       r.moderated_by, r.moderated_at, r.moderation_note,
-                       r.created_at, r.updated_at, i.risk_score
+                SELECT r.id, r.identifier_id, r.scam_type, r.description, r.amount_lost_ngn,
+                       r.channel, r.status, r.created_at, i.risk_score
                 FROM reports r
                 JOIN identifiers i ON r.identifier_id = i.id
                 ORDER BY r.created_at DESC
                 LIMIT $1 OFFSET $2
-                "#
+                "#,
+                limit,
+                offset
             )
-            .bind(limit)
-            .bind(offset)
             .fetch_all(db)
-            .await?
+            .await?;
+            
+            rows.into_iter().map(|row| {
+                AdminReportResponse {
+                    id: row.id,
+                    identifier_id: row.identifier_id,
+                    scam_type: row.scam_type,
+                    description: row.description,
+                    amount_lost_ngn: row.amount_lost_ngn,
+                    channel: row.channel,
+                    status: row.status,
+                    created_at: row.created_at,
+                    risk_score: row.risk_score,
+                }
+            }).collect::<Vec<_>>()
         };
 
-        Ok(reports.into_iter().map(|(r, risk_score)| {
-            AdminReportResponse::from_report(r, risk_score)
-        }).collect())
+        Ok(reports)
     }
 }
