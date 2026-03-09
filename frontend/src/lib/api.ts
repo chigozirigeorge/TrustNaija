@@ -1,12 +1,11 @@
 import axios from 'axios'
 import type { LookupResult, AuthResponse, UserProfile } from '@/types'
 
-const apiUrl = (import.meta.env.VITE_API_URL as string | undefined) || 'https://trustnaija-production.up.railway.app/api'
-
+const apiUrl = (import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:3000/api'
 const api = axios.create({
   baseURL: apiUrl,
 })
-
+//   'https://trustnaija-production.up.railway.app'
 // Add auth token to requests
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('tn_token')

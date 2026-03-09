@@ -43,11 +43,16 @@ export function LoginPage() {
     <div className="min-h-screen bg-navy-950 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
-        <div className="flex items-center gap-2 justify-center mb-10">
-          <div className="w-9 h-9 rounded-xl bg-signal-500/15 border border-signal-500/30 flex items-center justify-center">
-            <Shield className="w-5 h-5 text-signal-400" />
+        <div className="flex items-center gap-3 justify-center mb-12">
+          <div className="relative w-12 h-12 rounded-lg overflow-hidden flex items-center justify-center shadow-lg shadow-signal-500/30">
+            <img 
+              src='/logo.png' 
+              alt='TrustNaija Logo' 
+              className='w-full h-full object-cover'
+            />
+            <div className="absolute inset-0 rounded-lg bg-gradient-to-tr from-signal-500/20 to-transparent pointer-events-none" />
           </div>
-          <span className="font-display font-bold text-white text-xl">Trust<span className="text-signal-400">Naija</span></span>
+          <span className="font-display font-bold text-white text-2xl">Trust<span className="text-signal-400">Naija</span></span>
         </div>
 
         <div className="bg-navy-900/70 border border-white/[0.07] rounded-2xl p-8">

@@ -33,11 +33,16 @@ export function Navbar() {
     )}>
       <nav className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
         {/* Logo */}
-        <Link to="/" className="flex items-center gap-2.5 group">
-          <div className="w-8 h-8 rounded-lg bg-signal-500/15 border border-signal-500/30 flex items-center justify-center group-hover:bg-signal-500/25 transition-colors">
-            <Shield className="w-4 h-4 text-signal-400" />
+        <Link to="/" className="flex items-center gap-3 group">
+          <div className="relative w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center transition-all duration-300 group-hover:shadow-lg group-hover:shadow-signal-500/50">
+            <img 
+              src='/logo.png' 
+              alt='TrustNaija Logo' 
+              className='w-full h-full object-cover'
+            />
+            <div className="absolute inset-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-tr from-signal-500/20 to-transparent pointer-events-none" />
           </div>
-          <span className="font-display font-bold text-white text-lg tracking-tight">
+          <span className="font-display font-bold text-white text-lg tracking-tight hidden sm:inline">
             Trust<span className="text-signal-400">Naija</span>
           </span>
         </Link>
