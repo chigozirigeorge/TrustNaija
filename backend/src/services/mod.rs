@@ -5,3 +5,4 @@ pub mod report_service;
 pub mod auth_service;
 pub mod ussd_service;
 pub mod sms_service;
+pub mod meta_service;

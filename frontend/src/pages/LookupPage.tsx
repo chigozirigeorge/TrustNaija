@@ -7,6 +7,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLookup } from '@/hooks';
 import { Card, Button, RiskScoreRing, RiskBadge, Tag, Skeleton } from '@/components/ui';
 import { formatDate } from '@/lib/utils';
+import { updateMetaTags, generateShareUrls, fetchMeta } from '@/lib/meta';
 import type { RiskLevel } from '@/types';
 
 export function LookupPage() {
@@ -14,6 +15,7 @@ export function LookupPage() {
   const navigate = useNavigate();
   const { result, loading, error, lookup, clear } = useLookup();
   const [query, setQuery] = useState(searchParams.get('q') || '');
+  const [shareUrls, setShareUrls] = useState<ReturnType<typeof generateShareUrls> | null>(null);
 
   // Auto-lookup if query param present
   useEffect(() => {
@@ -23,6 +25,52 @@ export function LookupPage() {
       lookup(q);
     }
   }, []);
+
+  // Update meta tags and generate share URLs when result is available
+  useEffect(() => {
+    if (result && query) {
+      // Update HTML meta tags for social sharing and SEO
+      const pageUrl = `${window.location.origin}${window.location.pathname}?q=${encodeURIComponent(query)}`;
+      updateMetaTags(
+        {
+          identifier: query,
+          identifier_type: result.identifier_type,
+          risk_score: result.risk_score,
+          risk_level: result.risk_level,
+          report_count: result.report_count,
+          is_known: result.is_known,
+          og_title: result.is_known
+            ? `⚠️ Scam Alert: ${query} | Risk: ${result.risk_level}`
+            : `Check: ${query} | TrustNaija`,
+          og_description: result.is_known
+            ? `Risk Score: ${result.risk_score}/100 | ${result.risk_level} | ${result.report_count} reports filed. Stay safe with TrustNaija.`
+            : `No reports found for ${query} | Safe to transact | TrustNaija fraud detection`,
+          og_image: `https://trust-naija.vercel.app/risk-${result.risk_level.toLowerCase()}.png`,
+        },
+        window.location.origin
+      );
+
+      // Generate social share URLs
+      setShareUrls(generateShareUrls(
+        {
+          identifier: query,
+          identifier_type: result.identifier_type,
+          risk_score: result.risk_score,
+          risk_level: result.risk_level,
+          report_count: result.report_count,
+          is_known: result.is_known,
+          og_title: result.is_known
+            ? `⚠️ Scam Alert: ${query}`
+            : `Check: ${query}`,
+          og_description: result.is_known
+            ? `${result.report_count} reports filed`
+            : 'No reports found',
+          og_image: '',
+        },
+        pageUrl
+      ));
+    }
+  }, [result, query]);
 
   const handleSearch = () => {
     if (!query.trim()) return;
@@ -170,6 +218,47 @@ export function LookupPage() {
             <Button variant="secondary">📄 Download Report</Button>
             <Button variant="ghost" onClick={clear}>Clear</Button>
           </div>
+
+          {/* Share section */}
+          {shareUrls && (
+            <div className="mt-8 pt-8 border-t border-white/10">
+              <div className="text-white/30 text-[10px] font-mono tracking-widest uppercase mb-4">Share Result</div>
+              <div className="flex gap-3 flex-wrap">
+                <a
+                  href={shareUrls.whatsapp}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-white/10 transition-colors text-green-400"
+                >
+                  💬 WhatsApp
+                </a>
+                <a
+                  href={shareUrls.twitter}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-white/10 transition-colors text-blue-400"
+                >
+                  𝕏 Twitter
+                </a>
+                <a
+                  href={shareUrls.facebook}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-white/10 transition-colors text-blue-600"
+                >
+                  👍 Facebook
+                </a>
+                <a
+                  href={shareUrls.linkedin}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-white/10 transition-colors text-blue-500"
+                >
+                  💼 LinkedIn
+                </a>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -7,6 +7,7 @@
 
 use axum::{
     extract::{Path, Query, State},
+    http::HeaderMap,
     Json
 };
 use uuid::Uuid;
@@ -18,7 +19,7 @@ use crate::{
     models::{
         reports::{AdminReportResponse, ModerateReportRequest, Report},
         identifiers::Identifier,
-        audit::AuditLog,
+        audit::{AuditLog, AuditLogResponse},
     },
     services::{
         audit_services::AuditService,
@@ -95,6 +96,7 @@ pub async fn moderate_report(
     State(state): State<AppState>,
     ModeratorUser(claims): ModeratorUser,
     Path(report_id): Path<Uuid>,
+    headers: HeaderMap,
     Json(req): Json<ModerateReportRequest>,
 ) -> AppResult<Json<serde_json::Value>> {
     let moderator_id: Uuid = claims
@@ -102,9 +104,23 @@ pub async fn moderate_report(
         .parse()
         .map_err(|_| AppError::Internal("Invalid moderator ID in token".into()))?;
 
+    // Extract IP address from headers
+    let ip_address = headers
+        .get("X-Forwarded-For")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            headers
+                .get("X-Real-IP")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "development".to_string());
+
     ReportService::moderate_report(
-        &state.db, 
-        report_id, moderator_id, &req).await?;
+        &state.db,
+        &mut state.redis.clone(),
+        report_id, moderator_id, &req, Some(ip_address)).await?;
 
     Ok(Json(serde_json::json!({
         "success": true,
@@ -120,7 +136,7 @@ pub async fn list_audit_logs(
     State(state): State<AppState>,
     ModeratorUser(_claims): ModeratorUser,    // Admins only 
     Query(params): Query<AuditLogParams>,
-) -> AppResult<Json<Vec<AuditLog>>> {
+) -> AppResult<Json<Vec<AuditLogResponse>>> {
     let limit = params.limit.unwrap_or(50).min(200);
     let offset = params.offset.unwrap_or(0);
 
@@ -132,7 +148,8 @@ pub async fn list_audit_logs(
     )
     .await?;
 
-    Ok(Json(logs))
+    let responses: Vec<AuditLogResponse> = logs.into_iter().map(|log| log.into()).collect();
+    Ok(Json(responses))
 }
 
 /// GET /admin/identifiers/:id

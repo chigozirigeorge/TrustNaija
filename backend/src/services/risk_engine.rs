@@ -33,6 +33,62 @@ pub struct RiskInputs {
     pub scam_types: Vec<String>
 }
 
+/// Calculate a single report's contribution to the overall risk score.
+/// This is stored in the reports table for audit trail purposes.
+/// 
+/// Returns a value 0-100 representing how much this specific report
+/// contributes to the identifier's overall risk score.
+pub fn calculate_report_contribution(
+    scam_type: &str,
+    amount_lost_ngn: Option<i64>,
+    reporter_is_trusted: bool,
+    days_since_report: i64,
+) -> i16 {
+    let mut contribution: f64 = 0.0;
+
+    // Base contribution from scam type (0-30 pts)
+    let type_weight = match scam_type {
+        "investment" => 30.0,
+        "impersonation" => 28.0,
+        "phishing" => 25.0,
+        "loan_fraud" => 25.0,
+        "romance" => 20.0,
+        "online_shopping" => 15.0,
+        "job_offer" => 15.0,
+        _ => 12.0
+    };
+    contribution += type_weight;
+
+    // Recency bonus (0-20 pts)
+    let recency = match days_since_report {
+        0..=7 => 20.0,
+        8..=30 => 15.0,
+        31..=90 => 10.0,
+        _ => 5.0,
+    };
+    contribution += recency;
+
+    // Amount lost bonus (0-20 pts)
+    if let Some(total_kobo) = amount_lost_ngn {
+        let total_ngn = total_kobo / 100;
+        let loss_score = match total_ngn {
+            0..=10_000 => 5.0,
+            10_001..=100_000 => 10.0,
+            100_001..=500_000 => 15.0,
+            _ => 20.0,
+        };
+        contribution += loss_score;
+    }
+
+    // Trusted reporter boost (0-10 pts)
+    if reporter_is_trusted {
+        contribution += 10.0;
+    }
+
+    // Cap at 100 (though it shouldn't reach this)
+    (contribution.min(100.0) as i16)
+}
+
 /// Compute a risk score (0-100) from aggregated report data.
 ///
 /// This function implements the core pattern correlation logic.
@@ -139,8 +195,20 @@ pub async fn recompute_identifier_risk(
     .await?;
 
     let new_score = if let Some(inputs) = inputs {
-        compute_risk_score(&inputs)
+        let score = compute_risk_score(&inputs);
+        tracing::info!(
+            "Risk score for identifier {}: {} (approved_reports: {}, total_reports: {})",
+            identifier_id,
+            score,
+            inputs.approved_reports,
+            inputs.total_reports
+        );
+        score
     } else {
+        tracing::warn!(
+            "No reports found for identifier {}, setting risk_score to 0",
+            identifier_id
+        );
         0
     };
 
@@ -158,6 +226,72 @@ pub async fn recompute_identifier_risk(
         identifier_id,
         new_score
     );
+
+    Ok(new_score)
+}
+
+/// Compute immediate risk score including PENDING reports.
+///
+/// This is called immediately after a new report is submitted.
+/// It includes pending reports so users see the impact right away.
+/// The final score gets locked when an admin approves the report.
+pub async fn compute_immediate_risk_score(
+    db: &PgPool,
+    identifier_id: Uuid,
+) -> AppResult<i16> {
+    // Gather all data including PENDING reports
+    let inputs = sqlx::query_as::<_, RiskInputs>(
+        r#"
+        SELECT 
+            r.identifier_id,
+            COUNT(*) as "total_reports!",
+            COUNT(*) FILTER (WHERE r.status = 'approved') as "approved_reports!",
+            COUNT(u.id) FILTER (WHERE u.is_trusted = TRUE AND r.status = 'approved') as "trusted_reporter_count!",
+            MAX(r.created_at) as "most_recent_report?",
+            MIN(r.created_at) as "oldest_report?",
+            SUM(r.amount_lost_ngn) as "total_amount_lost_ngn?",
+            ARRAY_AGG(DISTINCT r.scam_type) FILTER (WHERE r.status = 'approved' OR r.status = 'pending') as "scam_types!"
+        FROM reports r
+        LEFT JOIN users u ON u.id = r.reporter_id
+        WHERE r.identifier_id = $1
+        GROUP BY r.identifier_id
+        "#
+    )
+    .bind(identifier_id)
+    .fetch_optional(db)
+    .await?;
+
+    let new_score = if let Some(mut inputs) = inputs {
+        // For immediate score: count all reports (approved + pending) but weight conservatively
+        // We use approved_reports for the calculation but include pending in total
+        let total_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM reports WHERE identifier_id = $1"
+        )
+        .bind(identifier_id)
+        .fetch_one(db)
+        .await?;
+
+        // Temporarily boost approved_reports to include pending ones (50% weight for pending)
+        let pending_count = total_count - inputs.approved_reports;
+        inputs.approved_reports = inputs.approved_reports + (pending_count / 2);
+
+        let score = compute_risk_score(&inputs);
+        tracing::info!(
+            "Immediate risk score for identifier {}: {} (approved: {}, pending: {}, total: {})",
+            identifier_id,
+            score,
+            inputs.approved_reports - (pending_count / 2),
+            pending_count,
+            total_count
+        );
+        score
+    } else {
+        tracing::warn!(
+            "No reports found for identifier {}, setting immediate risk_score to 0",
+            identifier_id
+        );
+        0
+    };
 
     Ok(new_score)
 }

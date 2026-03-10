@@ -75,12 +75,21 @@ impl LookupService {
 
     // Build response 
     let response = if let Some(id) = identifier_opt {
+        // Count only APPROVED reports for accuracy
+        let approved_count: (i64,) = sqlx::query_as(
+            r#"SELECT COUNT(*) FROM reports WHERE identifier_id = $1 AND status = 'approved'"#
+        )
+        .bind(id.id)
+        .fetch_one(db)
+        .await
+        .unwrap_or((0,));
+
         LookupResponse {
             identifier: normalized.canonical.clone(),
             identifier_type: normalized.identifier_type.clone(),
             risk_score: id.risk_score,
             risk_level: RiskLevel::from_score(id.risk_score, high_threshold, medium_threshold),
-            report_count: id.report_count,
+            report_count: approved_count.0 as i32,
             first_seen_at: Some(id.first_seen_at),
             last_seen_at: Some(id.last_seen_at),
             tags: id.tags,

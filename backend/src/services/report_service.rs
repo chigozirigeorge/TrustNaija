@@ -15,7 +15,8 @@ use crate::{
     },
     services::{
         audit_services::AuditService,
-        risk_engine::recompute_identifier_risk,
+        lookup_service::LookupService,
+        risk_engine::{recompute_identifier_risk, compute_immediate_risk_score},
     },
     utils::{hash::hash_identifier, normalize::normalize_identifier}
 };
@@ -104,12 +105,8 @@ impl ReportService {
         .fetch_one(db)
         .await?;
 
-        // compute updated risk score (only if auto-approved)
-        let risk_score = if status == STATUS_APPROVED {
-            recompute_identifier_risk(db, identifier.id).await?
-        } else {
-            identifier.risk_score
-        };
+        // compute updated risk score immediately (includes pending reports)
+        let risk_score = compute_immediate_risk_score(db, identifier.id).await?;
 
         AuditService::log(
             db, 
@@ -148,10 +145,15 @@ impl ReportService {
     /// On rejection: decrements report count on identifier.
     pub async fn moderate_report(
         db: &PgPool,
+        redis: &mut redis::aio::ConnectionManager,
         report_id: Uuid,
         moderator_id: Uuid,
-        req: &ModerateReportRequest
+        req: &ModerateReportRequest,
+        ip_address: Option<String>
     ) -> AppResult<()> {
+        // Start transaction to ensure atomicity
+        let mut tx = db.begin().await?;
+
         // Validate action
         let new_status = match req.action.as_str() {
             "approve" => STATUS_APPROVED,
@@ -161,14 +163,14 @@ impl ReportService {
             }
         };
 
-        // Fetch the report to get identifier_id
+        // Fetch the report to get identifier_id (with locking to prevent race conditions)
         let report = sqlx::query_as::<_, Report>(
             r#"
-            SELECT * FROM reports WHERE id = $1
+            SELECT * FROM reports WHERE id = $1 FOR UPDATE
             "#
         )
         .bind(report_id)
-        .fetch_optional(db)
+        .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Report {} not found", report_id)))?;
 
@@ -192,7 +194,7 @@ impl ReportService {
         .bind(moderator_id)
         .bind(req.note.clone())
         .bind(report_id)
-        .execute(db)
+        .execute(&mut *tx)
         .await?;
 
         // Apply tags to identifier if provided
@@ -203,17 +205,75 @@ impl ReportService {
                 )
                 .bind(tags)
                 .bind(report.identifier_id)
-                .execute(db)
+                .execute(&mut *tx)
                 .await?;
             }
         }
 
         // Recompute the risk score on approval
         if new_status == STATUS_APPROVED {
-            recompute_identifier_risk(db, report.identifier_id).await?;
+            // Calculate this report's contribution to overall risk
+            let reporter_is_trusted: bool = if let Some(reporter_id) = report.reporter_id {
+                sqlx::query_scalar::<_, bool>("SELECT is_trusted FROM users WHERE id = $1")
+                    .bind(reporter_id)
+                    .fetch_optional(&mut *tx)
+                    .await?
+                    .unwrap_or(false)
+            } else {
+                false
+            };
+            
+            let days_since = (chrono::Utc::now() - report.created_at).num_days();
+            let contribution = crate::services::risk_engine::calculate_report_contribution(
+                &report.scam_type,
+                report.amount_lost_ngn,
+                reporter_is_trusted,
+                days_since,
+            );
+            
+            // Store the contribution in the report
+            sqlx::query::<_>("UPDATE reports SET risk_contribution = $1 WHERE id = $2")
+                .bind(contribution)
+                .bind(report_id)
+                .execute(&mut *tx)
+                .await?;
+            
+            tracing::info!(
+                "Report {} approved with risk_contribution: {}",
+                report_id,
+                contribution
+            );
         }
 
-        // Audit log
+        // Commit transaction before cache invalidation (so DB is definitely updated)
+        tx.commit().await?;
+
+        // ──── OPERATIONS AFTER COMMIT (outside transaction) ────
+        
+        // Recompute risk if approved (happens after transaction is committed)
+        if new_status == STATUS_APPROVED {
+            // Recompute the overall identifier risk score
+            if let Err(e) = recompute_identifier_risk(db, report.identifier_id).await {
+                tracing::error!("Failed to recompute risk for identifier {}: {}", report.identifier_id, e);
+                // Don't fail the moderation if risk recomputation fails
+            }
+
+            // Get the canonical identifier value for cache invalidation
+            let identifier: Option<(String,)> = sqlx::query_as(
+                "SELECT canonical_value FROM identifiers WHERE id = $1"
+            )
+            .bind(report.identifier_id)
+            .fetch_optional(db)
+            .await
+            .unwrap_or(None);
+            
+            // Invalidate lookup cache so new risk score is fetched on next lookup
+            if let Some((canonical,)) = identifier {
+                let _ = LookupService::invalidate_cache(redis, &canonical).await;
+            }
+        }
+
+        // Audit log with IP address and identifier info (after commit)
         AuditService::log(
             db, 
             CreateAuditLog { 
@@ -227,9 +287,10 @@ impl ReportService {
                 entity_type: Some("report".into()), 
                 entity_id: Some(report_id), 
                 details: serde_json::json!({
-                    "note": req.note
+                    "note": req.note,
+                    "identifier_id": report.identifier_id.to_string()
                 }), 
-                ip_address: None, 
+                ip_address, 
                 channel: "admin".into() 
             }
         )

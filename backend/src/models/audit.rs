@@ -13,11 +13,43 @@ pub struct AuditLog {
     pub actor_hash: Option<String>,
     pub action: String,
     pub entity_type: Option<String>,
-    pub entity_id: Option<String>,
+    pub entity_id: Option<Uuid>,
     pub details: Value,
     pub ip_address: Option<String>,
     pub channel: String,
     pub created_at: DateTime<Utc>
+}
+
+/// Response struct for API (converts UUID to string for JSON)
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AuditLogResponse {
+    pub id: Uuid,
+    pub actor_id: Option<Uuid>,
+    pub actor_hash: Option<String>,
+    pub action: String,
+    pub entity_type: Option<String>,
+    pub entity_id: Option<String>,  // String for JSON
+    pub details: Value,
+    pub ip_address: Option<String>,
+    pub channel: String,
+    pub created_at: DateTime<Utc>
+}
+
+impl From<AuditLog> for AuditLogResponse {
+    fn from(log: AuditLog) -> Self {
+        AuditLogResponse {
+            id: log.id,
+            actor_id: log.actor_id,
+            actor_hash: log.actor_hash,
+            action: log.action,
+            entity_type: log.entity_type,
+            entity_id: log.entity_id.map(|id| id.to_string()),
+            details: log.details,
+            ip_address: log.ip_address,
+            channel: log.channel,
+            created_at: log.created_at,
+        }
+    }
 }
 
 /// Known audit action constants - prevents typos accross codebase

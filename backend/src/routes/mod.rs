@@ -10,6 +10,8 @@ pub mod ussd;
 pub mod health;
 pub mod sms;
 pub mod whatsapp;
+pub mod meta;
+pub mod meta_audit;
 
 use axum::{
     routing::{get, post},
@@ -20,7 +22,7 @@ use tower_http::{
     trace::TraceLayer,
     limit::RequestBodyLimitLayer,
 };
-use crate::{AppState, routes::{admin::{get_identifier, list_audit_logs, list_all_reports, list_pending_reports, moderate_report}, auth::{get_profile, initiate_registration, verify_otp}, health::health_check, lookup::lookup_identifier, report::create_report, sms::send_sms, ussd::handle_ussd, whatsapp::{verify_webhook, handle_webhook}}};
+use crate::{AppState, routes::{admin::{get_identifier, list_audit_logs, list_all_reports, list_pending_reports, moderate_report}, auth::{get_profile, initiate_registration, verify_otp}, health::health_check, lookup::lookup_identifier, report::create_report, sms::send_sms, ussd::handle_ussd, whatsapp::{verify_webhook, handle_webhook}, meta::get_meta}};
 
 /// Build the complete Axum application router
 /// All routes, middleware layers, and CORS are configured here
@@ -66,6 +68,9 @@ pub fn create_router(state: AppState) -> Router {
 
         // ── WhatsApp Gateway ──────────────────────────────────────
         .route("/whatsapp/webhook", get(verify_webhook).post(handle_webhook))
+
+        // ── SEO & Meta Endpoint ────────────────────────────────────
+        .route("/meta", get(get_meta))
 
         // ── Middleware ──────────────────────────────────────────
         .layer(TraceLayer::new_for_http())

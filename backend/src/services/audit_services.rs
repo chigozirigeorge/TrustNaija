@@ -16,8 +16,8 @@ impl AuditService {
     pub async fn log(db: &PgPool, entry: CreateAuditLog) -> AppResult<()> {
         let result = sqlx::query::<_>(
             r#"
-            INSER INTO audit_logs (actor_id, actor_hash, action, entity_type, entity_id, details, ip_address, channel)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8
+            INSERT INTO audit_logs (actor_id, actor_hash, action, entity_type, entity_id, details, ip_address, channel)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#
         )
         .bind(entry.actor_id)
