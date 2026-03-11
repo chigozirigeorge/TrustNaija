@@ -7,6 +7,7 @@ import { RiskBadge, TagBadge } from '@/components/ui/Badge'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { Button } from '@/components/ui/Button'
+import SocialShareButtons from '@/components/SocialShareButtons'
 import { useLookup } from '@/hooks/useLookup'
 import { formatDate } from '@/lib/utils'
 import type { LookupResult } from '@/types'
@@ -162,7 +163,7 @@ function ResultContent({ result }: { result: LookupResult }) {
       </div>
 
       {/* Action row */}
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3 mb-6">
         <Link to="/report">
           <Button variant="secondary" size="sm">
             <Flag className="w-3.5 h-3.5" />
@@ -176,6 +177,14 @@ function ResultContent({ result }: { result: LookupResult }) {
           </Button>
         </Link>
       </div>
+
+      {/* Share buttons */}
+      <SocialShareButtons 
+        identifier={result.identifier}
+        riskScore={result.risk_score}
+        riskLevel={result.risk_level}
+        isKnown={result.is_known}
+      />
     </div>
   )
 }

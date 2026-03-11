@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLookup } from '@/hooks';
 import { Card, Button, RiskScoreRing, RiskBadge, Tag, Skeleton } from '@/components/ui';
+import SocialShareButtons from '@/components/SocialShareButtons';
 import { formatDate } from '@/lib/utils';
 import { updateMetaTags, generateShareUrls, fetchMeta } from '@/lib/meta';
 import type { RiskLevel } from '@/types';
@@ -220,45 +221,12 @@ export function LookupPage() {
           </div>
 
           {/* Share section */}
-          {shareUrls && (
-            <div className="mt-8 pt-8 border-t border-white/10">
-              <div className="text-white/30 text-[10px] font-mono tracking-widest uppercase mb-4">Share Result</div>
-              <div className="flex gap-3 flex-wrap">
-                <a
-                  href={shareUrls.whatsapp}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-white/10 transition-colors text-green-400"
-                >
-                  💬 WhatsApp
-                </a>
-                <a
-                  href={shareUrls.twitter}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-white/10 transition-colors text-blue-400"
-                >
-                  𝕏 Twitter
-                </a>
-                <a
-                  href={shareUrls.facebook}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-white/10 transition-colors text-blue-600"
-                >
-                  👍 Facebook
-                </a>
-                <a
-                  href={shareUrls.linkedin}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-white/10 transition-colors text-blue-500"
-                >
-                  💼 LinkedIn
-                </a>
-              </div>
-            </div>
-          )}
+          <SocialShareButtons 
+            identifier={query}
+            riskScore={result.risk_score}
+            riskLevel={result.risk_level as RiskLevel}
+            isKnown={result.is_known}
+          />
         </div>
       )}
     </div>

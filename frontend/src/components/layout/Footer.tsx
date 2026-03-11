@@ -59,9 +59,19 @@ export function Footer() {
 
         <div className="mt-10 pt-6 border-t border-white/[0.04] flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-xs text-slate-600 font-body">© {new Date().getFullYear()} TrustNaija. Protecting Nigeria from fraud.</p>
-          <div className="flex items-center gap-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-signal-500 animate-pulse" />
-            <span className="text-xs text-slate-500 font-mono">System Operational</span>
+          <div className="flex items-center gap-4">
+            <Link to="/privacy" className="text-xs text-slate-500 hover:text-white transition-colors font-body">
+              Privacy Policy
+            </Link>
+            <div className="w-1 h-1 rounded-full bg-slate-700" />
+            <Link to="/terms" className="text-xs text-slate-500 hover:text-white transition-colors font-body">
+              Terms & Conditions
+            </Link>
+            <div className="w-1 h-1 rounded-full bg-slate-700" />
+            <div className="flex items-center gap-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-signal-500 animate-pulse" />
+              <span className="text-xs text-slate-500 font-mono">System Operational</span>
+            </div>
           </div>
         </div>
       </div>

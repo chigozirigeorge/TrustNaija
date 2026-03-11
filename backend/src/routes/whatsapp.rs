@@ -43,25 +43,25 @@ pub struct WebhookChallenge {
 }
 
 /// Incoming webhook message from WhatsApp
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct WhatsAppWebhookPayload {
     pub object: String,
     pub entry: Vec<WhatsAppEntry>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct WhatsAppEntry {
     pub id: String,
     pub changes: Vec<WhatsAppChange>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct WhatsAppChange {
     pub value: WhatsAppValue,
     pub field: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct WhatsAppValue {
     pub messaging_product: String,
     pub metadata: WhatsAppMetadata,
@@ -69,13 +69,13 @@ pub struct WhatsAppValue {
     pub statuses: Option<Vec<WhatsAppStatus>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct WhatsAppMetadata {
     pub display_phone_number: String,
     pub phone_number_id: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct WhatsAppMessage {
     pub from: String,
     pub id: String,
@@ -86,12 +86,12 @@ pub struct WhatsAppMessage {
     pub msg_type: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct WhatsAppText {
     pub body: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct WhatsAppStatus {
     pub id: String,
     pub status: String,
@@ -169,8 +169,12 @@ pub async fn handle_webhook(
 ) -> AppResult<Json<serde_json::Value>> {
     // Validate the payload
     if payload.object != "whatsapp_business_account" {
-        return Ok(Json(serde_json::json!({"success": false})));
+        tracing::warn!("Invalid webhook object type: {}", payload.object);
+        return Ok(Json(serde_json::json!({"success": true})));
     }
+
+    // Log full payload for debugging
+    tracing::debug!("WhatsApp webhook payload: {:?}", serde_json::to_string(&payload).unwrap_or_default());
 
     // Process each entry
     for entry in payload.entry {
@@ -178,10 +182,11 @@ pub async fn handle_webhook(
             // Handle incoming messages
             if let Some(messages) = &change.value.messages {
                 for message in messages {
+                    let msg_text = message.text.as_ref().map(|t| &t.body).unwrap_or(&"[non-text]".to_string()).to_string();
                     tracing::info!(
-                        "Received WhatsApp message from {}: {} (ID: {})",
+                        "🔔 Received WhatsApp message from {}: {} (ID: {})",
                         message.from,
-                        message.text.as_ref().map(|t| &t.body).unwrap_or(&"[non-text]".to_string()),
+                        msg_text,
                         message.id
                     );
 
@@ -189,6 +194,8 @@ pub async fn handle_webhook(
                     if let Some(text) = &message.text {
                         let command = text.body.trim().to_uppercase();
                         let parts: Vec<&str> = command.split_whitespace().collect();
+                        
+                        tracing::debug!("Processing WhatsApp command: {} (parts: {:?})", command, parts);
                         
                         let response: String = match parts.first().map(|s| *s) {
                             Some("REGISTER") => {
@@ -334,8 +341,16 @@ pub async fn handle_webhook(
                             }
                         };
 
-                        // Send response back to user
-                        let _ = send_whatsapp_message(&message.from, &response).await;
+                        // Send response back to user with error handling
+                        tracing::debug!("Sending WhatsApp response to {}: {:?}", message.from, response);
+                        match send_whatsapp_message(&message.from, &response).await {
+                            Ok(_) => {
+                                tracing::info!("✅ WhatsApp response sent to {}", message.from);
+                            }
+                            Err(e) => {
+                                tracing::error!("❌ Failed to send WhatsApp response to {}: {}", message.from, e);
+                            }
+                        }
                     }
                 }
             }
@@ -364,8 +379,10 @@ pub async fn send_whatsapp_message(
     phone_number: &str,
     message_body: &str,
 ) -> AppResult<()> {
-    let access_token = std::env::var("ACCESS_TOKEN")?;
-    let phone_number_id = std::env::var("PHONE_NUMBER_ID")?;
+    let access_token = std::env::var("ACCESS_TOKEN")
+        .map_err(|_| crate::error::AppError::Internal("ACCESS_TOKEN not set".into()))?;
+    let phone_number_id = std::env::var("PHONE_NUMBER_ID")
+        .map_err(|_| crate::error::AppError::Internal("PHONE_NUMBER_ID not set".into()))?;
 
     let client = reqwest::Client::new();
     let url = format!(
@@ -382,17 +399,29 @@ pub async fn send_whatsapp_message(
         }
     });
 
+    tracing::debug!("📤 Sending WhatsApp message to {} via {}", phone_number, url);
+
     let response = client
         .post(&url)
         .header("Authorization", format!("Bearer {}", access_token))
         .json(&payload)
         .send()
-        .await?;
+        .await
+        .map_err(|e| {
+            tracing::error!("❌ Failed to send WhatsApp message: {}", e);
+            crate::error::AppError::Internal(format!("WhatsApp send failed: {}", e))
+        })?;
 
-    if !response.status().is_success() {
-        tracing::error!("Failed to send WhatsApp message: {:?}", response.text().await);
+    let status = response.status();
+    tracing::debug!("WhatsApp API response status: {}", status);
+
+    if !status.is_success() {
+        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        tracing::error!("❌ WhatsApp API error ({}): {}", status, error_text);
+        return Err(crate::error::AppError::Internal(format!("WhatsApp API error: {}", error_text)));
     }
 
+    tracing::info!("✅ WhatsApp message sent successfully to {}", phone_number);
     Ok(())
 }
 
