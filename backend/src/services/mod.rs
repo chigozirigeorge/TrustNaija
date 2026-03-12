@@ -6,3 +6,4 @@ pub mod auth_service;
 pub mod ussd_service;
 pub mod sms_service;
 pub mod meta_service;
+pub mod ml_engine;

@@ -12,6 +12,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use url::Url;
 use crate::error::AppError;
+use crate::utils::identifier::{detect_identifier_type, normalize_identifier as normalize_identifier_util};
 
 /// Normalize result: canonical form + detected type
 #[derive(Debug, Clone)]
@@ -171,8 +172,17 @@ pub fn normalize_identifier(raw: &str) -> Result<NormalizationResult, AppError> 
         });
     }
 
+    // Try to detect and normalize using the new identifier types
+    if let Some(id_type) = detect_identifier_type(trimmed) {
+        let canonical = normalize_identifier_util(trimmed, &id_type);
+        return Ok(NormalizationResult {
+            canonical,
+            identifier_type: id_type.to_string(),
+        });
+    }
+
     Err(AppError::BadRequest(format!(
-        "Could not recognize identifier format: '{}'. Expected phone, URL, wallet, or app package.",
+        "Could not recognize identifier format: '{}'. Expected phone, URL, wallet, app, bank account, company name, or social media handle.",
         &trimmed[..trimmed.len().min(50)]
     )))
 }

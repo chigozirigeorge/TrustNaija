@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react'
-import { CheckCircle, XCircle, Clock, BarChart3, Users, Flag, Activity, RefreshCw } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, BarChart3, Users, Flag, Activity, RefreshCw, Brain } from 'lucide-react'
 import { PageLayout } from '@/components/layout/PageLayout'
 import { Button } from '@/components/ui/Button'
 import { Card, StatCard } from '@/components/ui/Card'
 import { RiskBadge } from '@/components/ui/Badge'
 import { getPendingReports, getAllReports, moderateReport, getAuditLogs } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
+import { MLDashboard } from '@/components/MLDashboard'
+import { useAuth } from '@/context/AuthContext'
 import type { AdminReport, AuditLog } from '@/types'
 import {
   BarChart,
@@ -55,11 +57,12 @@ export function AdminPage() {
   const [reports, setReports] = useState<AdminReport[]>([])
   const [allReports, setAllReports] = useState<AdminReport[]>([])
   const [logs, setLogs] = useState<AuditLog[]>([])
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'analytics' | 'logs'>('pending')
+  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'analytics' | 'logs' | 'ml'>('pending')
   const [moderating, setModerating] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reportFilter, setReportFilter] = useState<string>('')
+  const { user } = useAuth()
 
   // Fetch pending reports on mount
   useEffect(() => {
@@ -172,6 +175,7 @@ export function AdminPage() {
     { id: 'all' as const, label: 'All Reports', icon: BarChart3, count: undefined },
     { id: 'analytics' as const, label: 'Analytics', icon: BarChart3, count: undefined },
     { id: 'logs' as const, label: 'Audit Logs', icon: Activity, count: undefined },
+    { id: 'ml' as const, label: 'ML Engine', icon: Brain, count: undefined, admin: true },
   ]
 
   return (
@@ -205,16 +209,17 @@ export function AdminPage() {
         </div>
 
         {/* Tab navigation */}
-        <div className="flex gap-1 mb-6 bg-navy-900/60 p-1 rounded-xl border border-white/[0.06] w-fit">
-          {tabs.map(({ id, label, icon: Icon, count }) => (
+        <div className="flex gap-1 mb-6 bg-navy-900/60 p-1 rounded-xl border border-white/[0.06] w-fit overflow-x-auto">
+          {tabs.map(({ id, label, icon: Icon, count, admin }) => (
             <button
               key={id}
               onClick={() => setActiveTab(id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-display font-semibold transition-all ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-display font-semibold transition-all whitespace-nowrap ${
                 activeTab === id
                   ? 'bg-navy-700 text-white'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
+              title={admin ? 'Admin only - ML Engine' : undefined}
             >
               <Icon className="w-4 h-4" />
               {label}
@@ -472,6 +477,13 @@ export function AdminPage() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ML Engine Dashboard */}
+        {activeTab === 'ml' && (
+          <div>
+            <MLDashboard authToken={localStorage.getItem('tn_token') || undefined} />
           </div>
         )}
       </div>

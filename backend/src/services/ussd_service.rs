@@ -169,6 +169,8 @@ impl UssdService {
             description: Some("Reported via USSD".into()),
             amount_lost_ngn: None,
             reporter_phone: Some(caller_phone.into()),
+            bank_name: None,
+            company_website: None,
         };
 
         match ReportService::create_report(

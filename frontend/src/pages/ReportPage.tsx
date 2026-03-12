@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
-import { CheckCircle, AlertTriangle, Phone, Globe, Wallet, Package, ChevronRight } from 'lucide-react'
+import { CheckCircle, AlertTriangle, Phone, Globe, Wallet, Package, CreditCard, Building2, MessageSquare, ChevronRight, ChevronDown } from 'lucide-react'
 import { PageLayout } from '@/components/layout/PageLayout'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
@@ -21,11 +21,53 @@ const SCAM_TYPE_LABELS: Record<string, string> = {
   other: 'Other',
 }
 
-const IDENTIFIER_TYPES = [
-  { value: 'phone', label: 'Phone', icon: Phone },
-  { value: 'url', label: 'URL', icon: Globe },
-  { value: 'wallet', label: 'Wallet', icon: Wallet },
-  { value: 'app', label: 'App', icon: Package },
+// Grouped identifier types with dependencies
+const IDENTIFIER_GROUPS = [
+  {
+    category: 'Contact',
+    icon: Phone,
+    types: [
+      { value: 'phone', label: 'Phone Number', placeholder: '08012345678' },
+    ]
+  },
+  {
+    category: 'Web & Digital',
+    icon: Globe,
+    types: [
+      { value: 'url', label: 'Website URL', placeholder: 'https://example.com' },
+      { value: 'wallet', label: 'Crypto Wallet', placeholder: '0x1A2B3C...' },
+      { value: 'app', label: 'App Package', placeholder: 'com.example.app' },
+    ]
+  },
+  {
+    category: 'Banking',
+    icon: CreditCard,
+    types: [
+      { value: 'bank_account', label: 'Bank Account Number', placeholder: '1234567890' },
+      { value: 'bank_name', label: 'Bank Name', placeholder: 'GTBank, Access Bank, etc.' },
+    ]
+  },
+  {
+    category: 'Business',
+    icon: Building2,
+    types: [
+      { value: 'company_name', label: 'Company Name', placeholder: 'Company Legal Name' },
+      { value: 'company_website', label: 'Company Website', placeholder: 'https://company.com' },
+    ]
+  },
+  {
+    category: 'Social Media',
+    icon: MessageSquare,
+    types: [
+      { value: 'twitter', label: 'Twitter Handle', placeholder: '@username' },
+      { value: 'instagram', label: 'Instagram Account', placeholder: '@username' },
+      { value: 'tiktok', label: 'TikTok Account', placeholder: '@username' },
+      { value: 'facebook', label: 'Facebook Account', placeholder: 'profile name or URL' },
+      { value: 'whatsapp', label: 'WhatsApp Business', placeholder: '+234 phone or business ID' },
+      { value: 'telegram', label: 'Telegram Channel', placeholder: '@channel_name' },
+      { value: 'linkedin', label: 'LinkedIn Account', placeholder: 'username or profile URL' },
+    ]
+  },
 ]
 
 const SCAM_OPTIONS = Object.entries(SCAM_TYPE_LABELS).map(([value, label]) => ({ value, label }))
@@ -33,17 +75,47 @@ const SCAM_OPTIONS = Object.entries(SCAM_TYPE_LABELS).map(([value, label]) => ({
 type FormData = {
   identifier: string
   identifier_type: string
+  bank_name?: string  // Dependent field when identifier_type is bank_account
+  company_website?: string  // Dependent field when identifier_type is company_name
   scam_type: string
   description: string
   amount_lost_ngn: string
   reporter_phone: string
 }
 
+const NIGERIAN_BANKS = [
+  'Access Bank',
+  'FCMB',
+  'First Bank',
+  'Fidelity Bank',
+  'GTBank',
+  'Heritage Bank',
+  'Keystone Bank',
+  'Polaris Bank',
+  'Stanbic IBTC',
+  'Standard Chartered',
+  'Sterling Bank',
+  'UBA',
+  'Union Bank',
+  'Unity Bank',
+  'WEMA Bank',
+  'Zenith Bank',
+  'Eco Bank',
+  'Jaiz Bank',
+  'Providus Bank',
+  'Titan Trust',
+  'Premium Trust',
+  'Kuda Bank',
+  'OPay',
+  'Monie Point',
+]
+
 export function ReportPage() {
   const [searchParams] = useSearchParams()
   const prefilled = searchParams.get('identifier') || ''
   const [submitted, setSubmitted] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['Contact']))
 
   const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
     defaultValues: {
@@ -54,17 +126,42 @@ export function ReportPage() {
 
   const selectedType = watch('identifier_type')
 
+  const toggleGroup = (category: string) => {
+    const newExpanded = new Set(expandedGroups)
+    if (newExpanded.has(category)) {
+      newExpanded.delete(category)
+    } else {
+      newExpanded.add(category)
+    }
+    setExpandedGroups(newExpanded)
+  }
+
+  const getPlaceholder = (type: string) => {
+    const allTypes = IDENTIFIER_GROUPS.flatMap(g => g.types)
+    return allTypes.find(t => t.value === type)?.placeholder || 'Enter value'
+  }
+
   const onSubmit = async (data: FormData) => {
     setSubmitError(null)
     try {
-      await submitReport({
+      const payload: any = {
         identifer: data.identifier,  // Note: backend has typo, expects 'identifer' not 'identifier'
         identifier_type: data.identifier_type,
         scam_type: data.scam_type,
         description: data.description || undefined,
         amount_lost_ngn: data.amount_lost_ngn ? parseFloat(data.amount_lost_ngn) : undefined,
         reporter_phone: data.reporter_phone || undefined,
-      })
+      }
+
+      // Add dependent fields if they exist
+      if (data.bank_name) {
+        payload.bank_name = data.bank_name
+      }
+      if (data.company_website) {
+        payload.company_website = data.company_website
+      }
+
+      await submitReport(payload)
       setSubmitted(true)
     } catch (err: any) {
       setSubmitError(err.response?.data?.error?.message || 'Failed to submit report. Please try again.')
@@ -105,42 +202,95 @@ export function ReportPage() {
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
-          {/* Identifier type selector */}
+          {/* Identifier type selector - Grouped */}
           <div>
-            <p className="text-xs font-display font-semibold tracking-widest uppercase text-slate-400 mb-3">
+            <p className="text-xs font-display font-semibold tracking-widest uppercase text-slate-400 mb-4">
               What are you reporting?
             </p>
-            <div className="grid grid-cols-4 gap-2">
-              {IDENTIFIER_TYPES.map(({ value, label, icon: Icon }) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setValue('identifier_type', value)}
-                  className={`flex flex-col items-center gap-2 p-3 rounded-xl border text-xs font-display font-semibold transition-all duration-150 ${
-                    selectedType === value
-                      ? 'bg-signal-500/15 border-signal-500/40 text-signal-300'
-                      : 'bg-navy-900/50 border-white/8 text-slate-400 hover:border-white/20 hover:text-slate-200'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  {label}
-                </button>
-              ))}
+            <div className="space-y-3">
+              {IDENTIFIER_GROUPS.map((group) => {
+                const Icon = group.icon
+                const isExpanded = expandedGroups.has(group.category)
+                const isSelected = group.types.some(t => t.value === selectedType)
+
+                return (
+                  <div key={group.category}>
+                    {/* Group header - clickable to expand/collapse */}
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(group.category)}
+                      className={`w-full flex items-center gap-3 p-4 rounded-xl border transition-all ${
+                        isSelected
+                          ? 'bg-signal-500/15 border-signal-500/40'
+                          : 'bg-navy-900/50 border-white/8 hover:border-white/20'
+                      }`}
+                    >
+                      <Icon className={`w-5 h-5 ${isSelected ? 'text-signal-400' : 'text-slate-500'}`} />
+                      <span className={`flex-1 text-left text-sm font-display font-semibold ${isSelected ? 'text-signal-300' : 'text-slate-300'}`}>
+                        {group.category}
+                      </span>
+                      <div className={`text-xs text-slate-500 ${isSelected ? 'text-signal-400' : ''}`}>
+                        {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      </div>
+                    </button>
+
+                    {/* Expanded options */}
+                    {isExpanded && (
+                      <div className="mt-2 ml-6 space-y-2 pl-4 border-l border-white/10">
+                        {group.types.map(({ value, label }) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => {
+                              setValue('identifier_type', value)
+                              // Auto-expand parent group on selection
+                              if (!isExpanded) toggleGroup(group.category)
+                            }}
+                            className={`w-full flex items-center gap-3 p-3 rounded-lg border text-sm font-display font-medium transition-all ${
+                              selectedType === value
+                                ? 'bg-signal-500/20 border-signal-500/50 text-signal-300'
+                                : 'bg-navy-800/30 border-white/5 text-slate-400 hover:border-white/15 hover:text-slate-200'
+                            }`}
+                          >
+                            <div className={`w-2 h-2 rounded-full ${selectedType === value ? 'bg-signal-400' : 'bg-slate-600'}`} />
+                            <span>{label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </div>
 
           <Input
             label="Identifier to Report"
-            placeholder={
-              selectedType === 'phone' ? 'e.g. 08012345678' :
-              selectedType === 'url' ? 'e.g. fake-bank.ng/transfer' :
-              selectedType === 'wallet' ? 'e.g. 0xAbCd...' :
-              'e.g. com.fake.bankapp'
-            }
+            placeholder={getPlaceholder(selectedType)}
             error={errors.identifier?.message}
-            hint="Enter the exact phone number, URL, wallet address, or app package being reported"
-            {...register('identifier', { required: 'Identifier is required', minLength: { value: 3, message: 'Too short' } })}
+            hint="Enter the identifier you're reporting"
+            {...register('identifier', { required: 'Identifier is required', minLength: { value: 2, message: 'Too short' } })}
           />
+
+          {/* Dependent Fields */}
+          {selectedType === 'bank_account' && (
+            <Select
+              label="Which Bank?"
+              placeholder="Select the bank…"
+              options={NIGERIAN_BANKS.map(bank => ({ value: bank, label: bank }))}
+              error={errors.bank_name?.message}
+              {...register('bank_name', { required: 'Please select a bank' })}
+            />
+          )}
+
+          {selectedType === 'company_name' && (
+            <Input
+              label="Company Website (Optional)"
+              placeholder="https://company.com"
+              hint="If you also know the company's website, enter it here"
+              {...register('company_website')}
+            />
+          )}
 
           <Select
             label="Type of Scam"

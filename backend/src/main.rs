@@ -57,6 +57,7 @@ async fn main() -> anyhow::Result<()>{
 
     // Run pending migrations
     sqlx::migrate!("./migrations").run(&db).await.unwrap();
+    println!("Database nigration applied");
     tracing::info!("Database migration applied");
 
     // Connect to Redis

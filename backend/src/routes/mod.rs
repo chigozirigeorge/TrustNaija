@@ -12,6 +12,7 @@ pub mod sms;
 pub mod whatsapp;
 pub mod meta;
 pub mod meta_audit;
+pub mod ml;
 
 use axum::{
     routing::{get, post},
@@ -22,7 +23,7 @@ use tower_http::{
     trace::TraceLayer,
     limit::RequestBodyLimitLayer,
 };
-use crate::{AppState, routes::{admin::{get_identifier, list_audit_logs, list_all_reports, list_pending_reports, moderate_report}, auth::{get_profile, initiate_registration, verify_otp}, health::health_check, lookup::lookup_identifier, report::create_report, sms::send_sms, ussd::handle_ussd, whatsapp::{verify_webhook, handle_webhook}, meta::get_meta}};
+use crate::{AppState, routes::{admin::{get_identifier, list_audit_logs, list_all_reports, list_pending_reports, moderate_report}, auth::{get_profile, initiate_registration, verify_otp}, health::health_check, lookup::lookup_identifier, report::create_report, sms::send_sms, ussd::handle_ussd, whatsapp::{verify_webhook, handle_webhook}, meta::get_meta, ml::{ml_health, train_model, analyze_patterns, predict_wave, check_anomaly, forecast_volumes}}};
 
 /// Build the complete Axum application router
 /// All routes, middleware layers, and CORS are configured here
@@ -71,6 +72,14 @@ pub fn create_router(state: AppState) -> Router {
 
         // ── SEO & Meta Endpoint ────────────────────────────────────
         .route("/meta", get(get_meta))
+
+        // ── ML Engine Endpoints ────────────────────────────────────
+        .route("/ml/health", get(ml_health))
+        .route("/ml/train", post(train_model))
+        .route("/ml/analyze", get(analyze_patterns))
+        .route("/ml/predict-wave", get(predict_wave))
+        .route("/ml/forecast", get(forecast_volumes))
+        .route("/ml/anomaly/:identifier", get(check_anomaly))
 
         // ── Middleware ──────────────────────────────────────────
         .layer(TraceLayer::new_for_http())

@@ -76,7 +76,7 @@ pub struct CreateReportRequest {
 #[validate(length(min = 3, max = 512))]
 pub identifer: String,
 
-/// One of: phone, url, wallet, app
+/// One of: phone, url, wallet, app, bank_account, bank_name, company_name, etc
 pub identifier_type: String,
 
 /// Type of scam
@@ -91,6 +91,14 @@ pub amount_lost_ngn: Option<f64>,
 
 /// Reporters phone number (for anonymous/ Ussd reports, hashed before storage)
 pub reporter_phone: Option<String>,
+
+/// Dependent field: Bank name when reporting bank_account
+#[validate(length(min = 2, max = 100))]
+pub bank_name: Option<String>,
+
+/// Dependent field: Company website when reporting company_name
+#[validate(length(min = 5, max = 512))]
+pub company_website: Option<String>,
 }
 
 /// Response for report creation

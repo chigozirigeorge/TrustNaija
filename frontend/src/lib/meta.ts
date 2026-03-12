@@ -17,7 +17,7 @@ interface MetaResponse {
   og_image: string;
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_BASE = import.meta.env.VITE_API_URL || 'https://trustnaija-production.up.railway.app';
 const CACHE_DURATION = 300000; // 5 minutes in milliseconds
 
 // Simple in-memory cache with TTL

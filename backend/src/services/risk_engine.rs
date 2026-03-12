@@ -18,7 +18,7 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::error::AppResult;
+use crate::error::{AppResult, AppError};
 
 /// Input used to compute risk score for an identifier
 #[derive(Debug, sqlx::FromRow)]
@@ -292,6 +292,34 @@ pub async fn compute_immediate_risk_score(
         );
         0
     };
+
+    // Update the identifier's risk score in the database
+    let update_result = sqlx::query::<_>(
+        "UPDATE identifiers SET risk_score = $1, updated_at = NOW() WHERE id = $2"
+    )
+    .bind(new_score)
+    .bind(identifier_id)
+    .execute(db)
+    .await;
+
+    match update_result {
+        Ok(result) => {
+            tracing::debug!(
+                "Updated immediate risk score for identifier {}: {} (rows affected: {})",
+                identifier_id,
+                new_score,
+                result.rows_affected()
+            );
+        }
+        Err(e) => {
+            tracing::error!(
+                "Failed to update risk score for identifier {}: {:?}",
+                identifier_id,
+                e
+            );
+            return Err(AppError::Database(e));
+        }
+    }
 
     Ok(new_score)
 }

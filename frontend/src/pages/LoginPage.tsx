@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Shield, Phone, KeyRound, ArrowRight } from 'lucide-react'
 import { useForm } from 'react-hook-form'
@@ -11,17 +11,39 @@ export function LoginPage() {
   const [step, setStep] = useState<'phone' | 'otp'>('phone')
   const [phone, setPhone] = useState('')
   const [error, setError] = useState('')
+  const [autoSubmitting, setAutoSubmitting] = useState(false)
   const { login } = useAuth()
   const navigate = useNavigate()
 
-  const { register: regPhone, handleSubmit: handlePhone, formState: { isSubmitting: submittingPhone } } = useForm<{ phone: string }>()
-  const { register: regOtp, handleSubmit: handleOtp, formState: { isSubmitting: submittingOtp } } = useForm<{ otp: string }>()
+  const { register: regPhone, handleSubmit: handlePhone, formState: { isSubmitting: submittingPhone }, reset: resetPhone } = useForm<{ phone: string }>()
+  const { register: regOtp, handleSubmit: handleOtp, formState: { isSubmitting: submittingOtp }, watch: watchOtp } = useForm<{ otp: string }>()
+
+  const otpValue = watchOtp('otp')
+
+  // Auto-submit when OTP reaches 6 digits
+  useEffect(() => {
+    if (otpValue && otpValue.length === 6 && !autoSubmitting && !submittingOtp) {
+      setAutoSubmitting(true)
+      handleOtp(async (data) => {
+        setError('')
+        try {
+          const auth = await verifyOtp(phone, data.otp)
+          login(auth)
+          navigate('/')
+        } catch {
+          setError('Invalid or expired OTP. Please try again.')
+          setAutoSubmitting(false)
+        }
+      })()
+    }
+  }, [otpValue, autoSubmitting, submittingOtp, phone, handleOtp, login, navigate])
 
   const onPhoneSubmit = async (data: { phone: string }) => {
     setError('')
     try {
       await requestOtp(data.phone)
       setPhone(data.phone)
+      resetPhone()
       setStep('otp')
     } catch {
       setError('Could not send OTP. Please check the number and try again.')
@@ -98,6 +120,14 @@ export function LoginPage() {
                 Use different number
               </Button>
             </form>
+          )}
+
+          {/* Auto-submit indicator */}
+          {step === 'otp' && otpValue?.length === 6 && (
+            <div className="mt-4 p-3 rounded-lg bg-signal-500/10 border border-signal-500/30 flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-signal-400 animate-pulse" />
+              <p className="text-xs text-signal-300 font-body">Verifying OTP...</p>
+            </div>
           )}
         </div>
 

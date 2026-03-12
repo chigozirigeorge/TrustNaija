@@ -108,6 +108,97 @@ impl ReportService {
         // compute updated risk score immediately (includes pending reports)
         let risk_score = compute_immediate_risk_score(db, identifier.id).await?;
 
+        // Handle dependent fields - create additional reports for related identifiers
+        if req.identifier_type == "bank_account" && req.bank_name.is_some() {
+            // Also create/update a bank_name identifier
+            let bank_name = req.bank_name.as_ref().unwrap();
+            let bank_normalized = format!("bank:{}", bank_name.to_lowercase());
+            let bank_hash = hash_identifier(&bank_normalized);
+
+            let bank_identifier: Identifier = sqlx::query_as::<_, Identifier>(
+                r#"
+                INSERT INTO identifiers (canonical_value, identifier_type, raw_hash)
+                VALUES ($1, 'bank_name', $2)
+                ON CONFLICT (canonical_value) DO UPDATE
+                    SET last_seen_at = NOW(),
+                        report_count = identifiers.report_count + 1,
+                        updated_at = NOW()
+                    RETURNING *
+                "#
+            )
+            .bind(&bank_normalized)
+            .bind(&bank_hash)
+            .fetch_one(db)
+            .await?;
+
+            // Create a linked report for the bank
+            let _ = sqlx::query_as::<_, Report>(
+                r#"
+                INSERT INTO reports 
+                    (identifier_id, reporter_id, reporter_hash, scam_type, description, amount_lost_ngn, channel, status)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                RETURNING *
+                "#
+            )
+            .bind(bank_identifier.id)
+            .bind(reporter_id)
+            .bind(reporter_hash.clone())
+            .bind(req.scam_type.clone())
+            .bind(req.description.clone())
+            .bind(amount_kobo)
+            .bind(channel)
+            .bind(status)
+            .fetch_one(db)
+            .await?;
+
+            let _ = compute_immediate_risk_score(db, bank_identifier.id).await;
+        }
+
+        if req.identifier_type == "company_name" && req.company_website.is_some() {
+            // Also create/update a company_website identifier
+            let website = req.company_website.as_ref().unwrap();
+            let website_normalized = website.to_lowercase();
+            let website_hash = hash_identifier(&website_normalized);
+
+            let website_identifier: Identifier = sqlx::query_as::<_, Identifier>(
+                r#"
+                INSERT INTO identifiers (canonical_value, identifier_type, raw_hash)
+                VALUES ($1, 'company_website', $2)
+                ON CONFLICT (canonical_value) DO UPDATE
+                    SET last_seen_at = NOW(),
+                        report_count = identifiers.report_count + 1,
+                        updated_at = NOW()
+                    RETURNING *
+                "#
+            )
+            .bind(&website_normalized)
+            .bind(&website_hash)
+            .fetch_one(db)
+            .await?;
+
+            // Create a linked report for the website
+            let _ = sqlx::query_as::<_, Report>(
+                r#"
+                INSERT INTO reports 
+                    (identifier_id, reporter_id, reporter_hash, scam_type, description, amount_lost_ngn, channel, status)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                RETURNING *
+                "#
+            )
+            .bind(website_identifier.id)
+            .bind(reporter_id)
+            .bind(reporter_hash.clone())
+            .bind(req.scam_type.clone())
+            .bind(req.description.clone())
+            .bind(amount_kobo)
+            .bind(channel)
+            .bind(status)
+            .fetch_one(db)
+            .await?;
+
+            let _ = compute_immediate_risk_score(db, website_identifier.id).await;
+        }
+
         AuditService::log(
             db, 
             CreateAuditLog {

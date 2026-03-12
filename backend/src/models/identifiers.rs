@@ -19,6 +19,31 @@ pub enum IdentifierType {
     Wallet,
     #[serde(rename = "app")]
     App,
+    // Banking & Financial
+    #[serde(rename = "bank_account")]
+    BankAccount,
+    #[serde(rename = "bank_name")]
+    BankName,
+    // Companies
+    #[serde(rename = "company_name")]
+    CompanyName,
+    #[serde(rename = "company_website")]
+    CompanyWebsite,
+    // Social Media
+    #[serde(rename = "twitter")]
+    Twitter,
+    #[serde(rename = "instagram")]
+    Instagram,
+    #[serde(rename = "tiktok")]
+    TikTok,
+    #[serde(rename = "facebook")]
+    Facebook,
+    #[serde(rename = "whatsapp")]
+    WhatsApp,
+    #[serde(rename = "telegram")]
+    Telegram,
+    #[serde(rename = "linkedin")]
+    LinkedIn,
 }
 
 impl Display for IdentifierType {
@@ -28,6 +53,17 @@ impl Display for IdentifierType {
             IdentifierType::Url => write!(f, "url"),
             IdentifierType::Wallet => write!(f, "wallet"),
             IdentifierType::App => write!(f, "app"),
+            IdentifierType::BankAccount => write!(f, "bank_account"),
+            IdentifierType::BankName => write!(f, "bank_name"),
+            IdentifierType::CompanyName => write!(f, "company_name"),
+            IdentifierType::CompanyWebsite => write!(f, "company_website"),
+            IdentifierType::Twitter => write!(f, "twitter"),
+            IdentifierType::Instagram => write!(f, "instagram"),
+            IdentifierType::TikTok => write!(f, "tiktok"),
+            IdentifierType::Facebook => write!(f, "facebook"),
+            IdentifierType::WhatsApp => write!(f, "whatsapp"),
+            IdentifierType::Telegram => write!(f, "telegram"),
+            IdentifierType::LinkedIn => write!(f, "linkedin"),
         }
     }
 }
@@ -47,6 +83,43 @@ pub struct Identifier {
     pub metadata: serde_json::Value,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+impl IdentifierType {
+    /// Get the category of this identifier type
+    pub fn category(&self) -> &'static str {
+        match self {
+            Self::Phone => "contact",
+            Self::Url => "web",
+            Self::Wallet => "crypto",
+            Self::App => "app",
+            Self::BankAccount | Self::BankName => "banking",
+            Self::CompanyName | Self::CompanyWebsite => "company",
+            Self::Twitter | Self::Instagram | Self::TikTok | Self::Facebook 
+            | Self::WhatsApp | Self::Telegram | Self::LinkedIn => "social_media",
+        }
+    }
+
+    /// Get human-readable label for this identifier type
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Phone => "Phone Number",
+            Self::Url => "Website URL",
+            Self::Wallet => "Crypto Wallet",
+            Self::App => "App Package",
+            Self::BankAccount => "Bank Account",
+            Self::BankName => "Bank Name",
+            Self::CompanyName => "Company Name",
+            Self::CompanyWebsite => "Company Website",
+            Self::Twitter => "Twitter Handle",
+            Self::Instagram => "Instagram Account",
+            Self::TikTok => "TikTok Account",
+            Self::Facebook => "Facebook Account",
+            Self::WhatsApp => "WhatsApp Business",
+            Self::Telegram => "Telegram Channel",
+            Self::LinkedIn => "LinkedIn Account",
+        }
+    }
 }
 
 /// Risk classification based on score threasholds
