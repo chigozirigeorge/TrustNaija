@@ -244,13 +244,13 @@ pub async fn compute_immediate_risk_score(
         r#"
         SELECT 
             r.identifier_id,
-            COUNT(*) as "total_reports!",
-            COUNT(*) FILTER (WHERE r.status = 'approved') as "approved_reports!",
-            COUNT(u.id) FILTER (WHERE u.is_trusted = TRUE AND r.status = 'approved') as "trusted_reporter_count!",
-            MAX(r.created_at) as "most_recent_report?",
-            MIN(r.created_at) as "oldest_report?",
-            SUM(r.amount_lost_ngn) as "total_amount_lost_ngn?",
-            ARRAY_AGG(DISTINCT r.scam_type) FILTER (WHERE r.status = 'approved' OR r.status = 'pending') as "scam_types!"
+            COUNT(*) as total_reports,
+            COUNT(*) FILTER (WHERE r.status = 'approved') as approved_reports,
+            COUNT(u.id) FILTER (WHERE u.is_trusted = TRUE AND r.status = 'approved') as trusted_reporter_count,
+            MAX(r.created_at) as most_recent_report,
+            MIN(r.created_at) as oldest_report,
+            SUM(r.amount_lost_ngn) as total_amount_lost_ngn,
+            ARRAY_AGG(DISTINCT r.scam_type) FILTER (WHERE r.status = 'approved' OR r.status = 'pending') as scam_types
         FROM reports r
         LEFT JOIN users u ON u.id = r.reporter_id
         WHERE r.identifier_id = $1

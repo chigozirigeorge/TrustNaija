@@ -193,6 +193,7 @@ pub async fn handle_webhook(
                     // Process message based on content
                     if let Some(text) = &message.text {
                         let command = text.body.trim().to_uppercase();
+                        println!("Incoming message: {}", command);
                         let parts: Vec<&str> = command.split_whitespace().collect();
                         
                         tracing::debug!("Processing WhatsApp command: {} (parts: {:?})", command, parts);
@@ -386,7 +387,7 @@ pub async fn send_whatsapp_message(
 
     let client = reqwest::Client::new();
     let url = format!(
-        "https://graph.instagram.com/v18.0/{}/messages",
+        "https://graph.facebook.com/v18.0/{}/messages",
         phone_number_id
     );
 
