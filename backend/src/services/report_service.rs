@@ -521,4 +521,36 @@ impl ReportService {
 
         Ok(reports)
     }
+
+    /// Get a single report by ID with its identifier's risk score
+    pub async fn get_report_by_id(
+        db: &PgPool,
+        report_id: Uuid,
+    ) -> AppResult<AdminReportResponse> {
+        let row = sqlx::query!(
+            r#"
+            SELECT r.id, r.identifier_id, r.scam_type, r.description, r.amount_lost_ngn,
+                   r.channel, r.status, r.created_at, i.risk_score
+            FROM reports r
+            JOIN identifiers i ON r.identifier_id = i.id
+            WHERE r.id = $1
+            "#,
+            report_id
+        )
+        .fetch_one(db)
+        .await
+        .map_err(|_| AppError::NotFound(format!("Report {} not found", report_id)))?;
+
+        Ok(AdminReportResponse {
+            id: row.id,
+            identifier_id: row.identifier_id,
+            scam_type: row.scam_type,
+            description: row.description,
+            amount_lost_ngn: row.amount_lost_ngn,
+            channel: row.channel,
+            status: row.status,
+            created_at: row.created_at,
+            risk_score: row.risk_score,
+        })
+    }
 }

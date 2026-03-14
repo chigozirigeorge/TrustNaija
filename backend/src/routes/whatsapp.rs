@@ -25,10 +25,9 @@ use crate::{
     services::{
         auth_service::AuthService,
         lookup_service::LookupService,
-        sms_service::SmsService
+        report_service::ReportService,
     },
     models::user::VerifyOtpRequest,
-    utils::hash::mask_phone
 };
 
 /// WhatsApp webhook verification challenge
@@ -210,18 +209,32 @@ pub async fn handle_webhook(
                                     // Generate OTP and store in Redis with 5-minute TTL
                                     let mut redis_conn = _state.redis.clone();
                                     match AuthService::initiate_otp(&mut redis_conn, &phone).await {
-                                        Ok(_) => {
-                                            // Send OTP via Termii SMS service
-                                            let sms_service = SmsService::new(_state.config.clone(), _state.http_client.clone());
-                                            let _pin_result = sms_service.send_otp(&phone).await;
-                                            
-                                            format!(
-                                                "✅ *OTP Sent!*\n\n\
-                                                 📱 Check WhatsApp for your 6-digit code sent to {}\n\n\
+                                        Ok(otp_code) => {
+                                            // Send OTP via WhatsApp instead of SMS
+                                            let otp_msg = format!(
+                                                "🔐 *TrustNaija OTP Code*\n\n\
+                                                 Your One-Time Password:\n\n\
+                                                 🔑 *{}*\n\n\
                                                  Valid for 5 minutes.\n\n\
-                                                 Reply: *VERIFY {} <OTP>*",
-                                                mask_phone(&phone), phone
-                                            )
+                                                 Reply: *VERIFY {} {}*",
+                                                otp_code, phone, otp_code
+                                            );
+                                            
+                                            match send_whatsapp_message(&message.from, &otp_msg).await {
+                                                Ok(_) => {
+                                                    format!(
+                                                        "✅ *OTP Sent!*\n\n\
+                                                         📱 Check this WhatsApp chat for your 6-digit code\n\n\
+                                                         Valid for 5 minutes.\n\n\
+                                                         Reply: *VERIFY {} <OTP>*",
+                                                        phone
+                                                    )
+                                                }
+                                                Err(e) => {
+                                                    tracing::error!("Failed to send OTP via WhatsApp: {}", e);
+                                                    format!("❌ Failed to send OTP: {}\n\nPlease try again later.", e)
+                                                }
+                                            }
                                         }
                                         Err(e) => {
                                             tracing::error!("OTP generation failed: {}", e);
@@ -328,13 +341,54 @@ pub async fn handle_webhook(
                                 if parts.len() < 2 {
                                     "📊 *Report Status*\n\nUsage: STATUS <report_id>\n\nExample: STATUS 550e8400-e29b-41d4\n\nShows: Current status, moderator notes, updates".to_string()
                                 } else {
-                                    let report_id = parts[1];
-                                    // TODO: Implement full status lookup with database call
-                                    // For now, return template response
-                                    format!(
-                                        "📊 *Report {} Status*\n\nStatus: PENDING\nSubmitted: Mar 7, 2026\n\nYour report is being reviewed by our moderation team.\nYou will be notified when a decision is made.",
-                                        report_id
-                                    )
+                                    let report_id_str = parts[1];
+                                    // Parse UUID from string
+                                    match uuid::Uuid::parse_str(report_id_str) {
+                                        Ok(report_id) => {
+                                            match ReportService::get_report_by_id(&_state.db, report_id).await {
+                                                Ok(report) => {
+                                                    let status_emoji = match report.status.as_str() {
+                                                        "pending" => "⏳",
+                                                        "approved" => "✅",
+                                                        "rejected" => "❌",
+                                                        _ => "❓",
+                                                    };
+                                                    let amount_ngn = report.amount_lost_ngn.map(|k| k as f64 / 100.0).unwrap_or(0.0);
+                                                    
+                                                    format!(
+                                                        "{} *Report Status*\n\n\
+                                                         *Report ID:* {}\n\
+                                                         *Status:* {}\n\
+                                                         *Scam Type:* {}\n\
+                                                         *Submitted:* {}\n\
+                                                         *Amount Lost:* ₦{:.2}\n\
+                                                         *Risk Score:* {}/100\n\n\
+                                                         {}",
+                                                        status_emoji,
+                                                        report.id,
+                                                        report.status,
+                                                        report.scam_type,
+                                                        report.created_at.format("%b %d, %Y %H:%M"),
+                                                        amount_ngn,
+                                                        report.risk_score,
+                                                        match report.status.as_str() {
+                                                            "pending" => "Your report is being reviewed by our moderation team. You will be notified when a decision is made.",
+                                                            "approved" => "✅ Your report has been approved and the identifier has been flagged.",
+                                                            "rejected" => "❌ Your report was not approved. Please ensure you provide accurate information.",
+                                                            _ => "Status unknown"
+                                                        }
+                                                    )
+                                                }
+                                                Err(e) => {
+                                                    tracing::error!("Report lookup failed: {}", e);
+                                                    format!("❌ Report not found: {}\n\nPlease check the report ID and try again.", e)
+                                                }
+                                            }
+                                        }
+                                        Err(_) => {
+                                            format!("❌ Invalid report ID format: {}\n\nExpected format: 550e8400-e29b-41d4-a716-446655440000", report_id_str)
+                                        }
+                                    }
                                 }
                             }
                             Some("HELP") | _ => {
@@ -378,6 +432,11 @@ pub async fn handle_webhook(
     Ok(Json(serde_json::json!({"success": true})))
 }
 
+/// Redis key for OTP storage in WhatsApp context
+pub fn otp_key(phone_hash: &str) -> String {
+    format!("otp:{}", phone_hash)
+}
+
 /// Send a WhatsApp message to a user
 ///
 /// This would be called internally to send notifications, responses, etc.
@@ -405,6 +464,13 @@ pub async fn send_whatsapp_message(
         }
     });
 
+    eprintln!("📤 Sending WhatsApp message");
+    eprintln!("   URL: {}", url);
+    eprintln!("   To: {}", phone_number);
+    eprintln!("   Message: {}", message_body);
+    eprintln!("   Token present: {}", !access_token.is_empty());
+    eprintln!("   Phone ID: {}", phone_number_id);
+    
     tracing::debug!("📤 Sending WhatsApp message to {} via {}", phone_number, url);
 
     let response = client
@@ -414,22 +480,24 @@ pub async fn send_whatsapp_message(
         .send()
         .await
         .map_err(|e| {
+            eprintln!("❌ HTTP Error: {}", e);
             tracing::error!("❌ Failed to send WhatsApp message: {}", e);
             crate::error::AppError::Internal(format!("WhatsApp send failed: {}", e))
         })?;
 
     let status = response.status();
+    eprintln!("📨 WhatsApp API Response Status: {}", status);
     tracing::debug!("WhatsApp API response status: {}", status);
 
     if !status.is_success() {
         let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        eprintln!("❌ WhatsApp API error ({}): {}", status, error_text);
         tracing::error!("❌ WhatsApp API error ({}): {}", status, error_text);
-        eprintln!("WhatsApp API Error: Status {}, Body: {}", status, error_text);
         return Err(crate::error::AppError::Internal(format!("WhatsApp API error: {}", error_text)));
     }
 
-    tracing::info!("✅ WhatsApp message sent successfully to {}", phone_number);
     eprintln!("✅ WhatsApp message sent to {}", phone_number);
+    tracing::info!("✅ WhatsApp message sent successfully to {}", phone_number);
     Ok(())
 }
 

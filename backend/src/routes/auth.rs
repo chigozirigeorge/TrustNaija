@@ -4,15 +4,16 @@
 
 use axum::{extract::State, Json};
 use serde_json::Value;
+use redis::AsyncCommands;
 
-use crate::{AppState, error::{AppError, AppResult}, middleware::auth::AuthUser, models::user::{AuthResponse, RegisterRequest, User, UserProfile, VerifyOtpRequest}, services::{auth_service::AuthService, sms_service::SmsService}, utils::hash::{hash_identifier, mask_phone}};
+use crate::{AppState, error::{AppError, AppResult}, middleware::auth::AuthUser, models::user::{AuthResponse, RegisterRequest, User, UserProfile, VerifyOtpRequest}, services::auth_service::AuthService, utils::hash::{hash_identifier, mask_phone}};
 
 /// POST /auth/register
 ///
-/// Step 1 of phone auth: provide phone number, receive OTP via SMS.
+/// Step 1 of phone auth: provide phone number, receive OTP via WhatsApp.
 ///
 /// Request: { "phone": "08012345678" }
-/// Response: { "message": "OTP sent to your phone" }
+/// Response: { "message": "OTP sent via WhatsApp" }
 pub async fn initiate_registration(
     State(state): State<AppState>,
     Json(req): Json<RegisterRequest>,
@@ -20,28 +21,43 @@ pub async fn initiate_registration(
     let mut redis = state.redis.clone();
 
     // Generate OTP and store in Redis
-    let _phone = AuthService::initiate_otp(&mut redis, &req.phone).await?;
+    let phone = AuthService::initiate_otp(&mut redis, &req.phone).await?;
 
-    // Send OTP via Termii in production
-    if state.config.is_production() {
-        let sms_service = SmsService::new(state.config.clone(), state.http_client.clone());
-        let pin_id = sms_service.send_otp(&req.phone).await?;
+    // Send OTP via WhatsApp
+    let otp: Option<String> = redis.get(crate::routes::whatsapp::otp_key(&hash_identifier(&phone)))
+        .await
+        .ok();
 
-        // Store pin_id in Redis for later verification
-        let pin_key = format!("termii_pin:{}", crate::utils::hash::hash_identifier(&req.phone));
-        let mut redis = state.redis.clone();
-        redis::cmd("SETEX")
-            .arg(&pin_key)
-            .arg(300_u64) // 5 minute TTL
-            .arg(&pin_id)
-            .query_async::<()>(&mut redis)
-            .await
-            .ok();
+    if let Some(otp_code) = otp {
+        let whatsapp_phone = if phone.starts_with('+') {
+            phone.clone()
+        } else {
+            format!("+{}", phone)
+        };
+
+        let otp_message = format!(
+            "🔐 *TrustNaija OTP Code*\n\n\
+             Your One-Time Password:\n\n\
+             🔑 *{}*\n\n\
+             Valid for 5 minutes.\n\n\
+             Reply: VERIFY {} {}",
+            otp_code, phone, otp_code
+        );
+
+        match crate::routes::whatsapp::send_whatsapp_message(&whatsapp_phone, &otp_message).await {
+            Ok(_) => {
+                tracing::info!("OTP sent via WhatsApp to {}", mask_phone(&phone));
+            }
+            Err(e) => {
+                tracing::warn!("Failed to send OTP via WhatsApp: {}", e);
+            }
+        }
     }
 
     Ok(Json(serde_json::json!({
-        "message": "OTP sent to your phone number. Valid for 5 minutes.",
-        "phone": crate::utils::hash::mask_phone(&req.phone)
+        "message": "📱 OTP sent to your WhatsApp registered account! Make sure you're using the WhatsApp number linked to this phone number.",
+        "phone": crate::utils::hash::mask_phone(&req.phone),
+        "warning": "⚠️ Please register with your WhatsApp-registered phone number for seamless authentication."
     })))
 }
 
