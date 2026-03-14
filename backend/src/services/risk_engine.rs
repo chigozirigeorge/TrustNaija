@@ -89,6 +89,78 @@ pub fn calculate_report_contribution(
     (contribution.min(100.0) as i16)
 }
 
+/// Compute risk score for immediate (pending) reports.
+/// Similar to compute_risk_score but allows pending reports with 0 approved.
+fn compute_immediate_score(inputs: &RiskInputs) -> i16 {
+    if inputs.total_reports == 0 {
+        return 0;
+    }
+
+    let mut score: f64 = 0.0;
+
+    // ── Component 1: Report Volume (0-40 pts) ─────────────────
+    // For immediate score: weight pending reports at 50%
+    let effective_reports = inputs.approved_reports as f64 
+        + (inputs.total_reports - inputs.approved_reports) as f64 * 0.5;
+    let volume_score = effective_reports.log2() * 10.0;
+    score += volume_score.min(40.0);
+
+    // ── Component 2: Recency (0-20 pts) ───────────────────────
+    if let Some(most_recent) = inputs.most_recent_report {
+        let days_ago = (Utc::now() - most_recent).num_days();
+        let recency = match days_ago {
+            0..=7 => 20.0,
+            8..=30 => 15.0,
+            31..=90 => 10.0,
+            _ => 5.0,
+        };
+        score += recency;
+    }
+
+    // ── Component 3: Scam Type Severity (0-20 pts) ────────────
+    let severity = inputs
+        .scam_types
+        .iter()
+        .map(|t| match t.as_str() {
+            "investment" => 20.0,
+            "impersonation" => 18.0,
+            "phishing" => 15.0,
+            "loan_fraud" => 15.0,
+            "romance" => 12.0,
+            "online_shopping" => 10.0,
+            "job_offer" => 10.0,
+            _ => 8.0
+        })
+        .fold(0.0_f64, f64::max);
+    score += severity;
+
+    // ── Component 4: Trusted Reporter Boost (0-10 pts) ────────
+    // For pending reports, only use approved trusted reporters
+    let trusted_boost = match inputs.trusted_reporter_count {
+        0 => 0.0,
+        1 => 5.0,
+        2..=4 => 7.0,
+        _ => 10.0,
+    };
+    score += trusted_boost;
+
+    // ── Component 5: Amount Lost (0-10 pts) ──────────────────
+    if let Some(amount) = inputs.total_amount_lost_ngn {
+        let amount_naira = amount as f64 / 100.0;  // Convert kobo to naira
+        let amount_score = match amount_naira {
+            0.0 => 0.0,
+            1.0..=10_000.0 => 2.0,
+            10_001.0..=50_000.0 => 4.0,
+            50_001.0..=500_000.0 => 6.0,
+            500_001.0..=5_000_000.0 => 8.0,
+            _ => 10.0,
+        };
+        score += amount_score;
+    }
+
+    (score.round() as i16).min(100)
+}
+
 /// Compute a risk score (0-100) from aggregated report data.
 ///
 /// This function implements the core pattern correlation logic.
@@ -249,7 +321,7 @@ pub async fn compute_immediate_risk_score(
             COUNT(u.id) FILTER (WHERE u.is_trusted = TRUE AND r.status = 'approved') as trusted_reporter_count,
             MAX(r.created_at) as most_recent_report,
             MIN(r.created_at) as oldest_report,
-            SUM(r.amount_lost_ngn) as total_amount_lost_ngn,
+            CAST(SUM(r.amount_lost_ngn) AS BIGINT) as total_amount_lost_ngn,
             ARRAY_AGG(DISTINCT r.scam_type) FILTER (WHERE r.status = 'approved' OR r.status = 'pending') as scam_types
         FROM reports r
         LEFT JOIN users u ON u.id = r.reporter_id
@@ -261,28 +333,16 @@ pub async fn compute_immediate_risk_score(
     .fetch_optional(db)
     .await?;
 
-    let new_score = if let Some(mut inputs) = inputs {
-        // For immediate score: count all reports (approved + pending) but weight conservatively
-        // We use approved_reports for the calculation but include pending in total
-        let total_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM reports WHERE identifier_id = $1"
-        )
-        .bind(identifier_id)
-        .fetch_one(db)
-        .await?;
-
-        // Temporarily boost approved_reports to include pending ones (50% weight for pending)
-        let pending_count = total_count - inputs.approved_reports;
-        inputs.approved_reports = inputs.approved_reports + (pending_count / 2);
-
-        let score = compute_risk_score(&inputs);
+    let new_score = if let Some(inputs) = inputs {
+        // For immediate score: use a calculation that includes pending reports
+        let score = compute_immediate_score(&inputs);
         tracing::info!(
             "Immediate risk score for identifier {}: {} (approved: {}, pending: {}, total: {})",
             identifier_id,
             score,
-            inputs.approved_reports - (pending_count / 2),
-            pending_count,
-            total_count
+            inputs.approved_reports,
+            inputs.total_reports - inputs.approved_reports,
+            inputs.total_reports
         );
         score
     } else {

@@ -103,7 +103,13 @@ impl ReportService {
         .bind(channel)
         .bind(status)
         .fetch_one(db)
-        .await?;
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to insert report: {:?}", e);
+            e
+        })?;
+
+        tracing::info!("Report created successfully: id={}, identifier_id={}, status={}", report.id, identifier.id, report.status);
 
         // compute updated risk score immediately (includes pending reports)
         let risk_score = compute_immediate_risk_score(db, identifier.id).await?;
