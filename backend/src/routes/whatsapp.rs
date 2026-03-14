@@ -342,16 +342,21 @@ pub async fn handle_webhook(
                             }
                         };
 
-                        // Send response back to user with error handling
-                        tracing::debug!("Sending WhatsApp response to {}: {:?}", message.from, response);
-                        match send_whatsapp_message(&message.from, &response).await {
-                            Ok(_) => {
-                                tracing::info!("✅ WhatsApp response sent to {}", message.from);
+                        // Send response back to user asynchronously (non-blocking)
+                        // We return 200 OK immediately to WhatsApp, then send the response in background
+                        let phone = message.from.clone();
+                        let msg = response.clone();
+                        tokio::spawn(async move {
+                            tracing::debug!("Sending WhatsApp response to {}: {:?}", phone, msg);
+                            match send_whatsapp_message(&phone, &msg).await {
+                                Ok(_) => {
+                                    tracing::info!("✅ WhatsApp response sent to {}", phone);
+                                }
+                                Err(e) => {
+                                    tracing::error!("❌ Failed to send WhatsApp response to {}: {}", phone, e);
+                                }
                             }
-                            Err(e) => {
-                                tracing::error!("❌ Failed to send WhatsApp response to {}: {}", message.from, e);
-                            }
-                        }
+                        });
                     }
                 }
             }
@@ -419,10 +424,12 @@ pub async fn send_whatsapp_message(
     if !status.is_success() {
         let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
         tracing::error!("❌ WhatsApp API error ({}): {}", status, error_text);
+        eprintln!("WhatsApp API Error: Status {}, Body: {}", status, error_text);
         return Err(crate::error::AppError::Internal(format!("WhatsApp API error: {}", error_text)));
     }
 
     tracing::info!("✅ WhatsApp message sent successfully to {}", phone_number);
+    eprintln!("✅ WhatsApp message sent to {}", phone_number);
     Ok(())
 }
 
