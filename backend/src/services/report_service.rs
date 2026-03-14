@@ -413,7 +413,7 @@ impl ReportService {
         Ok(reports)
     }
 
-    /// Fetch all pending reports with their risk scores
+    /// Fetch all pending reports with their risk scores and identifier details
     pub async fn list_pending_reports_with_risk(
         db: &PgPool,
         limit: i64,
@@ -422,7 +422,7 @@ impl ReportService {
         let rows = sqlx::query!(
             r#"
             SELECT r.id, r.identifier_id, r.scam_type, r.description, r.amount_lost_ngn,
-                   r.channel, r.status, r.created_at, i.risk_score
+                   r.channel, r.status, r.created_at, i.risk_score, i.canonical_value, i.identifier_type
             FROM reports r
             JOIN identifiers i ON r.identifier_id = i.id
             WHERE r.status = 'pending'
@@ -439,6 +439,8 @@ impl ReportService {
             AdminReportResponse {
                 id: row.id,
                 identifier_id: row.identifier_id,
+                identifier: Some(row.canonical_value),
+                identifier_type: Some(row.identifier_type),
                 scam_type: row.scam_type,
                 description: row.description,
                 amount_lost_ngn: row.amount_lost_ngn,
@@ -461,7 +463,7 @@ impl ReportService {
             let rows = sqlx::query!(
                 r#"
                 SELECT r.id, r.identifier_id, r.scam_type, r.description, r.amount_lost_ngn,
-                       r.channel, r.status, r.created_at, i.risk_score
+                       r.channel, r.status, r.created_at, i.risk_score, i.canonical_value, i.identifier_type
                 FROM reports r
                 JOIN identifiers i ON r.identifier_id = i.id
                 WHERE r.status = $1
@@ -479,6 +481,8 @@ impl ReportService {
                 AdminReportResponse {
                     id: row.id,
                     identifier_id: row.identifier_id,
+                    identifier: Some(row.canonical_value),
+                    identifier_type: Some(row.identifier_type),
                     scam_type: row.scam_type,
                     description: row.description,
                     amount_lost_ngn: row.amount_lost_ngn,
@@ -492,7 +496,7 @@ impl ReportService {
             let rows = sqlx::query!(
                 r#"
                 SELECT r.id, r.identifier_id, r.scam_type, r.description, r.amount_lost_ngn,
-                       r.channel, r.status, r.created_at, i.risk_score
+                       r.channel, r.status, r.created_at, i.risk_score, i.canonical_value, i.identifier_type
                 FROM reports r
                 JOIN identifiers i ON r.identifier_id = i.id
                 ORDER BY r.created_at DESC
@@ -508,6 +512,8 @@ impl ReportService {
                 AdminReportResponse {
                     id: row.id,
                     identifier_id: row.identifier_id,
+                    identifier: Some(row.canonical_value),
+                    identifier_type: Some(row.identifier_type),
                     scam_type: row.scam_type,
                     description: row.description,
                     amount_lost_ngn: row.amount_lost_ngn,
@@ -530,7 +536,7 @@ impl ReportService {
         let row = sqlx::query!(
             r#"
             SELECT r.id, r.identifier_id, r.scam_type, r.description, r.amount_lost_ngn,
-                   r.channel, r.status, r.created_at, i.risk_score
+                   r.channel, r.status, r.created_at, i.risk_score, i.canonical_value, i.identifier_type
             FROM reports r
             JOIN identifiers i ON r.identifier_id = i.id
             WHERE r.id = $1
@@ -544,6 +550,8 @@ impl ReportService {
         Ok(AdminReportResponse {
             id: row.id,
             identifier_id: row.identifier_id,
+            identifier: Some(row.canonical_value),
+            identifier_type: Some(row.identifier_type),
             scam_type: row.scam_type,
             description: row.description,
             amount_lost_ngn: row.amount_lost_ngn,

@@ -124,11 +124,13 @@ pub const STATUS_PENDING: &str = "pending";
 pub const STATUS_APPROVED: &str = "approved";
 pub const STATUS_REJECTED: &str = "rejected";
 
-/// Report response for admin endpoints (includes risk score)
+/// Report response for admin endpoints (includes risk score and identifier details)
 #[derive(Debug, Clone, Serialize)]
 pub struct AdminReportResponse {
     pub id: Uuid,
     pub identifier_id: Uuid,
+    pub identifier: Option<String>,        // The actual identifier value (phone, URL, etc)
+    pub identifier_type: Option<String>,   // Type: phone | url | wallet | app
     pub scam_type: String,
     pub description: Option<String>,
     pub amount_lost_ngn: Option<i64>,
@@ -144,6 +146,8 @@ impl AdminReportResponse {
         Self {
             id: report.id,
             identifier_id: report.identifier_id,
+            identifier: None,
+            identifier_type: None,
             scam_type: report.scam_type,
             description: report.description,
             amount_lost_ngn: report.amount_lost_ngn,
@@ -152,5 +156,12 @@ impl AdminReportResponse {
             created_at: report.created_at,
             risk_score,
         }
+    }
+
+    /// Create with identifier details
+    pub fn with_identifier(mut self, identifier: String, identifier_type: String) -> Self {
+        self.identifier = Some(identifier);
+        self.identifier_type = Some(identifier_type);
+        self
     }
 }

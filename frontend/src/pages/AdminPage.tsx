@@ -259,6 +259,17 @@ export function AdminPage() {
                     <RiskBadge score={report.risk_score} />
                     <span className="text-xs text-slate-600 font-mono">{report.channel}</span>
                   </div>
+                  {/* Show identifier details */}
+                  {report.identifier && (
+                    <div className="mb-2 p-2 bg-navy-800/50 rounded border border-white/5">
+                      <p className="text-xs text-slate-400 font-mono">
+                        <span className="text-slate-500">Type:</span> {report.identifier_type || 'unknown'}
+                      </p>
+                      <p className="text-sm font-mono text-white break-all">
+                        {report.identifier}
+                      </p>
+                    </div>
+                  )}
                   {report.description && (
                     <p className="text-sm text-slate-300 font-body mb-1 line-clamp-1">{report.description}</p>
                   )}
@@ -344,6 +355,17 @@ export function AdminPage() {
                       </span>
                       <span className="text-xs text-slate-600 font-mono">{report.channel}</span>
                     </div>
+                    {/* Show identifier details */}
+                    {report.identifier && (
+                      <div className="mb-2 p-2 bg-navy-800/50 rounded border border-white/5">
+                        <p className="text-xs text-slate-400 font-mono">
+                          <span className="text-slate-500">Type:</span> {report.identifier_type || 'unknown'}
+                        </p>
+                        <p className="text-sm font-mono text-white break-all">
+                          {report.identifier}
+                        </p>
+                      </div>
+                    )}
                     {report.description && (
                       <p className="text-sm text-slate-300 font-body mb-1 line-clamp-1">{report.description}</p>
                     )}

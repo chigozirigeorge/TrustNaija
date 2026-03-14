@@ -35,6 +35,8 @@ export interface ReportResponse {
 export interface AdminReport {
   id: string
   identifier_id: string
+  identifier?: string              // The actual identifier (phone, URL, etc.)
+  identifier_type?: string         // Type: phone | url | wallet | app
   scam_type: string
   description?: string
   amount_lost_ngn?: number
